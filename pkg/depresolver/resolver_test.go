@@ -12,7 +12,7 @@ import (
 func TestRemote(t *testing.T) {
 	cleanfs := map[string]string{}
 	cachefs := map[string]string{
-		"/path/to/home/https_github_com_cloudposse_helmfiles_git.ref=0.40.0/releases/kiam.yaml": "foo: bar",
+		"/path/to/home/https_github_com_cloudposse_helmfiles_git.ref=0_40_0/releases/kiam.yaml": "foo: bar",
 	}
 
 	type testcase struct {
@@ -37,7 +37,10 @@ func TestRemote(t *testing.T) {
 
 			hit := true
 
-			get := func(wd, src, dst string) error {
+			get := func(wd, src, dst string, filemode bool) error {
+				if filemode {
+					return fmt.Errorf("unexpected filemode: %v", filemode)
+				}
 				if wd != "/path/to/home" {
 					return fmt.Errorf("unexpected wd: %s", wd)
 				}
@@ -72,7 +75,7 @@ func TestRemote(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			if file != "/path/to/home/https_github_com_cloudposse_helmfiles_git.ref=0.40.0/releases/kiam.yaml" {
+			if file != "/path/to/home/https_github_com_cloudposse_helmfiles_git.ref=0_40_0/releases/kiam.yaml" {
 				t.Errorf("unexpected file located: %s", file)
 			}
 
@@ -87,9 +90,9 @@ func TestRemote(t *testing.T) {
 }
 
 type testGetter struct {
-	get func(wd, src, dst string) error
+	get func(wd, src, dst string, filemode bool) error
 }
 
-func (t *testGetter) Get(wd, src, dst string) error {
-	return t.get(wd, src, dst)
+func (t *testGetter) Get(wd, src, dst string, filemode bool) error {
+	return t.get(wd, src, dst, filemode)
 }

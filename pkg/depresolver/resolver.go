@@ -190,6 +190,7 @@ func (e InvalidURLError) Error() string {
 
 type Source struct {
 	Getter, Scheme, Host, Dir, File, RawQuery string
+	IsFileMode                                bool
 }
 
 func IsRemote(goGetterSrc string) bool {
@@ -217,18 +218,28 @@ func Parse(goGetterSrc string) (*Source, error) {
 		return nil, InvalidURLError{err: fmt.Sprintf("parse url: missing scheme - probably this is a local file path? %s", goGetterSrc)}
 	}
 
+	var dir, file string
+	var filemode bool
 	pathComponents := strings.Split(u.Path, "@")
-	if len(pathComponents) != 2 {
+	if len(pathComponents) == 1 {
+		dir = u.Path
+		file = filepath.Base(u.Path)
+		filemode = true
+	} else if len(pathComponents) == 2 {
+		dir = pathComponents[0]
+		file = pathComponents[1]
+	} else {
 		return nil, fmt.Errorf("invalid src format: it must be `[<getter>::]<scheme>://<host>/<path/to/dir>@<path/to/file>?key1=val1&key2=val2: got %s", goGetterSrc)
 	}
 
 	return &Source{
-		Getter:   getter,
-		Scheme:   u.Scheme,
-		Host:     u.Host,
-		Dir:      pathComponents[0],
-		File:     pathComponents[1],
-		RawQuery: u.RawQuery,
+		Getter:     getter,
+		Scheme:     u.Scheme,
+		Host:       u.Host,
+		Dir:        dir,
+		File:       file,
+		RawQuery:   u.RawQuery,
+		IsFileMode: filemode,
 	}, nil
 }
 
@@ -238,87 +249,82 @@ func (r *Resolver) Fetch(goGetterSrc string) (string, error) {
 		return "", err
 	}
 
-	srcDir := fmt.Sprintf("%s://%s%s", u.Scheme, u.Host, u.Dir)
+	query := u.RawQuery
+	getterSrc := fmt.Sprintf("%s://%s%s", u.Scheme, u.Host, u.Dir)
+	if len(query) != 0 {
+		getterSrc = strings.Join([]string{getterSrc, query}, "?")
+	}
+
 	file := u.File
 
 	r.Logger.V(1).Info("fetching", "getter", u.Getter, "scheme", u.Scheme, "host", u.Host, "dir", u.Dir, "file", u.File)
 
 	// This should be shared across variant commands, so that they can share cache for the shared imports
 
-	query := u.RawQuery
-
-	var cacheKey string
-	replacer := strings.NewReplacer(":", "", "//", "_", "/", "_", ".", "_")
-	dirKey := replacer.Replace(srcDir)
-	if len(query) > 0 {
-		paramsKey := strings.Replace(query, "&", "_", -1)
-		cacheKey = fmt.Sprintf("%s.%s", dirKey, paramsKey)
-	} else {
-		cacheKey = dirKey
-	}
+	replacer := strings.NewReplacer(":", "", "//", "_", "/", "_", ".", "_", "&", "_", "?", ".")
+	getterDstDir := replacer.Replace(getterSrc)
 
 	cached := false
 
-	getterDst := cacheKey
+	localCopyDir := filepath.Join(r.Home, getterDstDir)
 
-	cacheDirPath := filepath.Join(r.Home, getterDst)
-
-	r.Logger.V(1).Info("fetching", "home", r.Home, "dst", getterDst, "cache-dir", cacheDirPath)
+	r.Logger.V(1).Info("fetching", "home", r.Home, "dst", getterDstDir, "cache-dir", localCopyDir)
 
 	{
-		if r.FileExists(cacheDirPath) {
-			return "", fmt.Errorf("%s is not directory. please remove it so that variant could use it for dependency caching", getterDst)
+		if r.FileExists(localCopyDir) {
+			return "", fmt.Errorf("%s is not directory. please remove it so that variant could use it for dependency caching", getterDstDir)
 		}
 
-		if r.DirExists(cacheDirPath) {
+		if r.DirExists(localCopyDir) {
 			cached = true
 		}
 	}
 
 	if !cached {
-		var getterSrc string
-
-		if len(query) == 0 {
-			getterSrc = srcDir
-		} else {
-			getterSrc = strings.Join([]string{srcDir, query}, "?")
-		}
-
 		if u.Getter != "" {
 			getterSrc = u.Getter + "::" + getterSrc
 		}
 
-		r.Logger.V(1).Info("downloading", "src", getterSrc, "dir", r.Home, "dst", getterDst)
-		r.Logger.V(1).Info("creating directories", "path", cacheDirPath)
+		r.Logger.V(1).Info("downloading", "src", getterSrc, "dir", r.Home, "dst", getterDstDir)
+		r.Logger.V(1).Info("creating directories", "path", localCopyDir)
 
 		// go-getter silently fails when the destination directory already exists.
 		// So we create directories down to the parent directory of the target.
-		if err := vfs.MkdirAll(r.fs, filepath.Dir(cacheDirPath), 0755); err != nil {
+		if err := vfs.MkdirAll(r.fs, filepath.Dir(localCopyDir), 0755); err != nil {
 			return "", err
 		}
 
-		r.Logger.V(1).Info("mkdirall succeeded", "dir", cacheDirPath)
+		var getterDst string
+		var fileMode bool
+		if u.IsFileMode {
+			fileMode = true
+			getterDst = filepath.Join(getterDstDir, u.File)
+		} else {
+			getterDst = getterDstDir
+		}
 
-		if err := r.Getter.Get(r.Home, getterSrc, getterDst); err != nil {
-			if err2 := r.fs.RemoveAll(cacheDirPath); err2 != nil {
+		r.Logger.V(1).Info("mkdirall succeeded", "dir", localCopyDir)
+
+		if err := r.Getter.Get(r.Home, getterSrc, getterDst, fileMode); err != nil {
+			if err2 := r.fs.RemoveAll(localCopyDir); err2 != nil {
 				return "", err2
 			}
 			return "", err
 		}
 	}
 
-	return filepath.Join(cacheDirPath, file), nil
+	return filepath.Join(localCopyDir, file), nil
 }
 
 type Getter interface {
-	Get(wd, src, dst string) error
+	Get(wd, src, dst string, fileMode bool) error
 }
 
 type GoGetter struct {
 	Logger logr.Logger
 }
 
-func (g *GoGetter) Get(wd, src, dst string) error {
+func (g *GoGetter) Get(wd, src, dst string, fileMode bool) error {
 	ctx := context.Background()
 
 	get := &getter.Client{
@@ -330,7 +336,11 @@ func (g *GoGetter) Get(wd, src, dst string) error {
 		Options: []getter.ClientOption{},
 	}
 
-	g.Logger.V(1).Info("get", "client", *get, "wd", wd, "src", src, "dst", dst)
+	if fileMode {
+		get.Mode = getter.ClientModeFile
+	}
+
+	g.Logger.V(1).Info("get", "client", *get, "wd", wd, "src", src, "dst", dst, "filemode", fileMode)
 
 	if err := get.Get(); err != nil {
 		return fmt.Errorf("get: %v", err)

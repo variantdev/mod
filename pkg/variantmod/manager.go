@@ -153,6 +153,7 @@ func New(opts ...Option) (*ModuleManager, error) {
 
 	return mod, nil
 }
+
 func (m *ModuleManager) Run() error {
 	bytes, err := m.fs.ReadFile(filepath.Join(m.AbsWorkDir, "variant.mod"))
 	if err != nil {

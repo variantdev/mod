@@ -3,6 +3,10 @@ module github.com/variantdev/mod
 go 1.12
 
 require (
+	github.com/Masterminds/semver v1.4.2
+	github.com/PaesslerAG/gval v1.0.1
+	github.com/PaesslerAG/jsonpath v0.1.0
+	github.com/exponent-io/jsonpath v0.0.0-20151013193312-d6023ce2651d // indirect
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-logr/logr v0.1.0
 	github.com/hashicorp/go-getter v1.3.0
