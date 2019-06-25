@@ -14,6 +14,7 @@ import (
 )
 
 func init() {
+	// See https://groups.google.com/forum/#!topic/Golang-nuts/uSFM8jG7yn4 for why this needs to be in init()
 	fs := loginfra.NewFlagSet()
 	fs = loginfra.AddKlogFlags(fs)
 	fs.Set("v", "2")
