@@ -31,6 +31,8 @@ func CastKeysToStrings(s interface{}) (map[string]interface{}, error) {
 
 			new[k] = casted_v
 		}
+	default:
+		return nil, fmt.Errorf("unexpected type: value=%v, type=%T", src, src)
 	}
 	return new, nil
 }
@@ -60,7 +62,7 @@ func recursivelyStringifyMapKey(v interface{}) (interface{}, error) {
 	return casted_v, nil
 }
 
-func Set(m map[string]interface{}, key []string, value string) map[string]interface{} {
+func Set(m map[string]interface{}, key []string, value interface{}) map[string]interface{} {
 	if len(key) == 0 {
 		panic(fmt.Errorf("bug: unexpected length of key: %d", len(key)))
 	}

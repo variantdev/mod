@@ -15,6 +15,7 @@ import (
 	"k8s.io/klog/klogr"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type ModuleSpec struct {
@@ -39,6 +40,8 @@ type DependencySpec struct {
 	Arguments      map[string]interface{} `yaml:"arguments"`
 	ReleaseChannel string                 `yaml:"releaseChannel"`
 	Alias          string
+
+	VersionLock map[string]interface{}
 }
 
 type ModuleManager struct {
@@ -186,18 +189,47 @@ func New(opts ...Option) (*ModuleManager, error) {
 }
 
 func (m *ModuleManager) Load() (*Module, error) {
+	bytes, err := m.fs.ReadFile(filepath.Join(m.AbsWorkDir, "variant.lock"))
+	if err != nil {
+		m.Logger.V(2).Info("load.readfile", "err", err.Error())
+		if !strings.HasSuffix(err.Error(), "no such file or directory") {
+			return nil, err
+		}
+	}
+
+	versionLock := Values{}
+	if bytes != nil {
+		m.Logger.V(2).Info("load.yaml.unmarshal.begin", "bytes", string(bytes))
+		if err := yaml.Unmarshal(bytes, &versionLock); err != nil {
+			return nil, err
+		}
+
+		m.Logger.V(2).Info("load.yaml.unmarshal.end", "data", versionLock)
+
+		versionLock, err = maputil.CastKeysToStrings(map[string]interface{}(versionLock))
+		if err != nil {
+			return nil, err
+		}
+
+		m.Logger.V(2).Info("load.yaml.castkeys", "data", versionLock)
+	}
+
 	spec := DependencySpec{
 		Source:         filepath.Join(m.AbsWorkDir, "variant.mod"),
 		Arguments:      map[string]interface{}{},
 		ReleaseChannel: "stable",
+		VersionLock:    versionLock,
 	}
+
+	m.Logger.V(2).Info("load.begin", "spec", spec)
 
 	mod, err := m.load(spec)
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Fprintf(os.Stderr, "%+v\n", mod)
+	m.Logger.V(2).Info("load.end", "mod", fmt.Sprintf("%+v", mod))
+
 	return mod, nil
 }
 
@@ -239,7 +271,7 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 	if err := yaml.Unmarshal(bytes, spec); err != nil {
 		return nil, err
 	}
-	m.Logger.V(0).Info("load.unmarshal", "spec", spec)
+	m.Logger.V(2).Info("load", "alias", depspec.Alias, "module", spec, "dep", depspec)
 
 	var vals map[string]interface{}
 	vals, err = maputil.CastKeysToStrings(spec.Values)
@@ -247,10 +279,11 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		return nil, err
 	}
 
-	vals = mergeByOverwrite(Values{}, vals, depspec.Arguments)
+	vals = mergeByOverwrite(Values{}, vals, depspec.Arguments, depspec.VersionLock)
 
 	var rel *releasechannel.Provider
-	if len(spec.ReleaseChannel.ReleaseChannels) > 0 {
+	if len(spec.ReleaseChannel.ReleaseChannels) > 0 && depspec.VersionLock["version"] == nil {
+
 		rel, err = releasechannel.New(
 			&spec.ReleaseChannel,
 			"stable",
@@ -282,9 +315,34 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		vals[alias] = mm
 	}
 
+	var verLock Values
+	if depspec.VersionLock != nil {
+		verLock = depspec.VersionLock
+	}
+	if vals[depspec.Alias] != nil {
+		switch t := vals[depspec.Alias].(type) {
+		case map[string]interface{}:
+			verLock = t
+		case Values:
+			verLock = map[string]interface{}(t)
+		default:
+			return nil, fmt.Errorf("unexpected type: value=%v, type=%T", t, t)
+		}
+	}
+
 	deps := map[string]*Module{}
 	for name, dspec := range spec.Dependencies {
 		dspec.Alias = name
+		if lock, ok := depspec.VersionLock[name]; ok {
+			switch t := lock.(type) {
+			case map[string]interface{}:
+				dspec.VersionLock = t
+			case Values:
+				dspec.VersionLock = map[string]interface{}(t)
+			default:
+				return nil, fmt.Errorf("unexpected error: value=%v, type=%T", t, t)
+			}
+		}
 		args, err := maputil.CastKeysToStrings(dspec.Arguments)
 		if err != nil {
 			return nil, err
@@ -320,7 +378,7 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		execversionmanager.WD(m.AbsWorkDir),
 		execversionmanager.GoGetterWD(m.goGetterAbsWorkDir),
 		execversionmanager.FS(m.fs),
-		)
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -348,6 +406,7 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		Executable:     execset,
 		ReleaseChannel: rel,
 		Dependencies:   deps,
+		VersionLock:    verLock,
 	}
 
 	return mod, nil
@@ -360,6 +419,65 @@ func (m *ModuleManager) Run() error {
 	}
 
 	return m.run(mod)
+}
+
+func (m *ModuleManager) Up() (*Module, error) {
+	spec := DependencySpec{
+		Source:         filepath.Join(m.AbsWorkDir, "variant.mod"),
+		Arguments:      map[string]interface{}{},
+		ReleaseChannel: "stable",
+		VersionLock:    map[string]interface{}{},
+	}
+
+	mod, err := m.load(spec)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Fprintf(os.Stderr, "%+v\n", mod)
+	return mod, nil
+}
+
+func (m *ModuleManager) lock(mod *Module) error {
+	vals := Values{}
+	if err := m.breadthFirstWalk(mod, []string{}, &vals, func(path []string, ctx *Values, dep *Module) error {
+		m.Logger.V(2).Info("lock", "path", path, "ctx", ctx, "lock", dep.VersionLock)
+		if dep.VersionLock != nil {
+			maputil.Set(*ctx, path, dep.VersionLock)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	bytes, err := yaml.Marshal(vals)
+	if err != nil {
+		return err
+	}
+
+	writeTo := filepath.Join(m.AbsWorkDir, "variant.lock")
+
+	m.Logger.V(2).Info("lock.write", "path", writeTo, "data", string(bytes))
+
+	return m.fs.WriteFile(writeTo, bytes, 0644)
+}
+
+func (m *ModuleManager) breadthFirstWalk(cur *Module, path []string, vals *Values, f func([]string, *Values, *Module) error) error {
+	if cur.Dependencies != nil {
+		for i := range cur.Dependencies {
+			dep := cur.Dependencies[i]
+			if err := f(append(append([]string{}, path...), dep.Alias), vals, dep); err != nil {
+				return err
+			}
+		}
+		for i := range cur.Dependencies {
+			dep := cur.Dependencies[i]
+			if err := m.breadthFirstWalk(dep, append(append([]string{}, path...), dep.Alias), vals, f); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func mergeByOverwrite(src ...Values) (res Values) {

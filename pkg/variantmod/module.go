@@ -19,6 +19,8 @@ type Module struct {
 	Executable     *execversionmanager.ExecVM
 
 	Dependencies map[string]*Module
+
+	VersionLock map[string]interface{}
 }
 
 type File struct {
