@@ -23,6 +23,10 @@ type Resolver struct {
 	// variantmod saves fetched remote files into .variant/mod/cache under home
 	Home string
 
+	// GoGetterHome is the working directory to be used by go-getter for downloading the dependency
+	// This differs from Home only when testing with go-vfs/vtfs
+	GoGetterHome string
+
 	// Getter is the underlying implementation of getter used for fetching remote files
 	Getter Getter
 
@@ -42,13 +46,22 @@ type Option interface {
 func Home(dir string) Option {
 	return &homeOption{d: dir}
 }
-
 type homeOption struct {
 	d string
 }
-
 func (s *homeOption) SetOption(r *Resolver) error {
 	r.Home = s.d
+	return nil
+}
+
+func GoGetterHome(dir string) Option {
+	return &goGetterHomeOption{d: dir}
+}
+type goGetterHomeOption struct {
+	d string
+}
+func (s *goGetterHomeOption) SetOption(r *Resolver) error {
+	r.GoGetterHome = s.d
 	return nil
 }
 
@@ -85,6 +98,10 @@ func New(opts ...Option) (*Resolver, error) {
 		if err := o.SetOption(r); err != nil {
 			return nil, err
 		}
+	}
+
+	if r.GoGetterHome == "" {
+		r.GoGetterHome = r.Home
 	}
 
 	if r.Logger == nil {
@@ -266,16 +283,16 @@ func (r *Resolver) Fetch(goGetterSrc string) (string, error) {
 
 	cached := false
 
-	localCopyDir := filepath.Join(r.Home, getterDstDir)
+	vfsLocalCopyDir := filepath.Join(r.Home, getterDstDir)
 
-	r.Logger.V(1).Info("fetching", "home", r.Home, "dst", getterDstDir, "cache-dir", localCopyDir)
+	r.Logger.V(1).Info("fetching", "home", r.Home, "dst", getterDstDir, "cache-dir", vfsLocalCopyDir)
 
 	{
-		if r.FileExists(localCopyDir) {
+		if r.FileExists(vfsLocalCopyDir) {
 			return "", fmt.Errorf("%s is not directory. please remove it so that variant could use it for dependency caching", getterDstDir)
 		}
 
-		if r.DirExists(localCopyDir) {
+		if r.DirExists(vfsLocalCopyDir) {
 			cached = true
 		}
 	}
@@ -286,11 +303,11 @@ func (r *Resolver) Fetch(goGetterSrc string) (string, error) {
 		}
 
 		r.Logger.V(1).Info("downloading", "src", getterSrc, "dir", r.Home, "dst", getterDstDir)
-		r.Logger.V(1).Info("creating directories", "path", localCopyDir)
+		r.Logger.V(1).Info("creating directories", "path", vfsLocalCopyDir)
 
 		// go-getter silently fails when the destination directory already exists.
 		// So we create directories down to the parent directory of the target.
-		if err := vfs.MkdirAll(r.fs, filepath.Dir(localCopyDir), 0755); err != nil {
+		if err := vfs.MkdirAll(r.fs, filepath.Dir(vfsLocalCopyDir), 0755); err != nil {
 			return "", err
 		}
 
@@ -303,17 +320,17 @@ func (r *Resolver) Fetch(goGetterSrc string) (string, error) {
 			getterDst = getterDstDir
 		}
 
-		r.Logger.V(1).Info("mkdirall succeeded", "dir", localCopyDir)
+		r.Logger.V(1).Info("mkdirall succeeded", "dir", vfsLocalCopyDir)
 
-		if err := r.Getter.Get(r.Home, getterSrc, getterDst, fileMode); err != nil {
-			if err2 := r.fs.RemoveAll(localCopyDir); err2 != nil {
+		if err := r.Getter.Get(r.GoGetterHome, getterSrc, getterDst, fileMode); err != nil {
+			if err2 := r.fs.RemoveAll(vfsLocalCopyDir); err2 != nil {
 				return "", err2
 			}
 			return "", err
 		}
 	}
 
-	return filepath.Join(localCopyDir, file), nil
+	return filepath.Join(vfsLocalCopyDir, file), nil
 }
 
 type Getter interface {

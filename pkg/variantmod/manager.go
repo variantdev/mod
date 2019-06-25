@@ -1,23 +1,32 @@
 package variantmod
 
 import (
-	"bytes"
 	"fmt"
-	"github.com/ghodss/yaml"
 	"github.com/go-logr/logr"
 	"github.com/twpayne/go-vfs"
 	"github.com/variantdev/mod/pkg/depresolver"
+	"github.com/variantdev/mod/pkg/execversionmanager"
+	"github.com/variantdev/mod/pkg/maputil"
+	"github.com/variantdev/mod/pkg/releasechannel"
+	"github.com/variantdev/mod/pkg/tmpl"
 	"github.com/xeipuuv/gojsonschema"
+	"gopkg.in/yaml.v3"
+	"k8s.io/klog"
 	"k8s.io/klog/klogr"
 	"os"
 	"path/filepath"
-	"text/template"
 )
 
 type ModuleSpec struct {
+	Name string `yaml:"name"`
+
 	Values map[string]interface{} `yaml:"values"`
 	Schema map[string]interface{} `yaml:"schema"`
 	Files  map[string]FileSpec    `yaml:"files"`
+
+	Dependencies   map[string]DependencySpec `yaml:"dependencies"`
+	ReleaseChannel releasechannel.Config     `yaml:",inline"`
+	Executable     execversionmanager.Config `yaml:",inline"`
 }
 
 type FileSpec struct {
@@ -25,23 +34,25 @@ type FileSpec struct {
 	Arguments map[string]interface{} `yaml:"arguments"`
 }
 
+type DependencySpec struct {
+	Source         string                 `yaml:"source"`
+	Arguments      map[string]interface{} `yaml:"arguments"`
+	ReleaseChannel string                 `yaml:"releaseChannel"`
+	Alias          string
+}
+
 type ModuleManager struct {
 	fs vfs.FS
 
 	Logger logr.Logger
 
-	AbsWorkDir     string
-	CacheDirectory string
+	AbsWorkDir string
+	cacheDir   string
+
+	goGetterAbsWorkDir string
+	goGetterCacheDir   string
 
 	dep *depresolver.Resolver
-}
-
-type Values map[string]interface{}
-
-type Module struct {
-	Values       Values
-	ValuesSchema Values
-	Files        []File
 }
 
 type Parameter struct {
@@ -49,12 +60,6 @@ type Parameter struct {
 	Default  interface{}
 	Type     string
 	Required []string
-}
-
-type File struct {
-	Path      string
-	Source    string
-	Arguments map[string]interface{}
 }
 
 type Option interface {
@@ -100,6 +105,19 @@ func (s *wdOption) SetOption(r *ModuleManager) error {
 	return nil
 }
 
+func GoGetterWD(goGetterWD string) Option {
+	return &goGetterWDOption{d: goGetterWD}
+}
+
+type goGetterWDOption struct {
+	d string
+}
+
+func (s *goGetterWDOption) SetOption(r *ModuleManager) error {
+	r.goGetterAbsWorkDir = s.d
+	return nil
+}
+
 func New(opts ...Option) (*ModuleManager, error) {
 	mod := &ModuleManager{}
 
@@ -130,39 +148,158 @@ func New(opts ...Option) (*ModuleManager, error) {
 		mod.AbsWorkDir = abs
 	}
 
-	if mod.CacheDirectory == "" {
-		mod.CacheDirectory = ".variant/mod/cache"
+	if mod.goGetterAbsWorkDir == "" {
+		mod.goGetterAbsWorkDir = mod.AbsWorkDir
 	}
 
-	abs := filepath.IsAbs(mod.CacheDirectory)
+	if mod.cacheDir == "" {
+		mod.cacheDir = ".variant/mod/cache"
+	}
+
+	if mod.goGetterCacheDir == "" {
+		mod.goGetterCacheDir = mod.cacheDir
+	}
+
+	abs := filepath.IsAbs(mod.cacheDir)
 	if !abs {
-		mod.CacheDirectory = filepath.Join(mod.AbsWorkDir, mod.CacheDirectory)
+		mod.cacheDir = filepath.Join(mod.AbsWorkDir, mod.cacheDir)
 	}
 
-	mod.Logger.V(1).Info("init", "workdir", mod.AbsWorkDir, "cachedir", mod.CacheDirectory)
+	abs = filepath.IsAbs(mod.goGetterCacheDir)
+	if !abs {
+		mod.goGetterCacheDir = filepath.Join(mod.goGetterAbsWorkDir, mod.goGetterCacheDir)
+	}
+
+	mod.Logger.V(1).Info("init", "workdir", mod.AbsWorkDir, "cachedir", mod.cacheDir)
 
 	dep, err := depresolver.New(
-		depresolver.Home(mod.CacheDirectory),
+		depresolver.Home(mod.cacheDir),
+		depresolver.GoGetterHome(mod.goGetterCacheDir),
 		depresolver.Logger(mod.Logger),
 	)
 	if err != nil {
 		return nil, err
 	}
-
 	mod.dep = dep
 
 	return mod, nil
 }
 
-func (m *ModuleManager) Run() error {
-	bytes, err := m.fs.ReadFile(filepath.Join(m.AbsWorkDir, "variant.mod"))
-	if err != nil {
-		return err
+func (m *ModuleManager) Load() (*Module, error) {
+	spec := DependencySpec{
+		Source:         filepath.Join(m.AbsWorkDir, "variant.mod"),
+		Arguments:      map[string]interface{}{},
+		ReleaseChannel: "stable",
 	}
 
-	spec := &ModuleSpec{}
-	if err := yaml.Unmarshal(bytes, &spec); err != nil {
-		return err
+	mod, err := m.load(spec)
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Fprintf(os.Stderr, "%+v\n", mod)
+	return mod, nil
+}
+
+func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
+	defer func() {
+		if err != nil {
+			m.Logger.Error(err, "load", "depspec", depspec)
+		}
+	}()
+
+	resolved, err := m.dep.Resolve(depspec.Source)
+	if err != nil {
+		return nil, err
+	}
+
+	if !filepath.IsAbs(resolved) {
+		resolved = filepath.Join(m.AbsWorkDir, resolved)
+	}
+
+	if filepath.Base(resolved) != "variant.mod" {
+		resolved = filepath.Join(resolved, "variant.mod")
+	}
+
+	bytes, err := m.fs.ReadFile(resolved)
+	if err != nil {
+		m.Logger.Error(err, "read file", "resolved", resolved, "depspec", depspec)
+		var err2 error
+		bytes, err2 = m.fs.ReadFile(resolved)
+		if err2 != nil {
+			return nil, err2
+		}
+	}
+
+	spec := &ModuleSpec{
+		Name:   "variant",
+		Schema: map[string]interface{}{},
+		Values: map[string]interface{}{},
+	}
+	if err := yaml.Unmarshal(bytes, spec); err != nil {
+		return nil, err
+	}
+	m.Logger.V(0).Info("load.unmarshal", "spec", spec)
+
+	var vals map[string]interface{}
+	vals, err = maputil.CastKeysToStrings(spec.Values)
+	if err != nil {
+		return nil, err
+	}
+
+	vals = mergeByOverwrite(Values{}, vals, depspec.Arguments)
+
+	var rel *releasechannel.Provider
+	if len(spec.ReleaseChannel.ReleaseChannels) > 0 {
+		rel, err = releasechannel.New(
+			&spec.ReleaseChannel,
+			"stable",
+			releasechannel.WD(m.AbsWorkDir),
+			releasechannel.GoGetterWD(m.goGetterAbsWorkDir),
+			releasechannel.FS(m.fs),
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		alias := depspec.Alias
+
+		rel.Spec.Source, err = tmpl.Render("releaseChannel.source", rel.Spec.Source, vals)
+		if err != nil {
+			return nil, err
+		}
+
+		rel, err := rel.Latest()
+		if err != nil {
+			return nil, err
+		}
+		mm := Values{}
+		m, ok := vals[alias]
+		if ok && m != nil {
+			mm = m.(Values)
+		}
+		mm["version"] = rel.Version
+		vals[alias] = mm
+	}
+
+	deps := map[string]*Module{}
+	for name, dspec := range spec.Dependencies {
+		dspec.Alias = name
+		args, err := maputil.CastKeysToStrings(dspec.Arguments)
+		if err != nil {
+			return nil, err
+		}
+		dspec.Arguments, err = tmpl.RenderArgs(args, vals)
+		if err != nil {
+			return nil, err
+		}
+		depmod, err := m.load(dspec)
+		if err != nil {
+			return nil, err
+		}
+		deps[name] = depmod
+
+		vals[dspec.Alias] = depmod.Values
 	}
 
 	files := []File{}
@@ -177,28 +314,105 @@ func (m *ModuleManager) Run() error {
 
 	spec.Schema["type"] = "object"
 
-	mod := &Module{
-		Values:       spec.Values,
-		ValuesSchema: spec.Schema,
-		Files:        files,
+	execset, err := execversionmanager.New(
+		&spec.Executable,
+		execversionmanager.Values(vals),
+		execversionmanager.WD(m.AbsWorkDir),
+		execversionmanager.GoGetterWD(m.goGetterAbsWorkDir),
+		execversionmanager.FS(m.fs),
+		)
+	if err != nil {
+		return nil, err
+	}
+
+	schema, err := maputil.CastKeysToStrings(spec.Schema)
+	if err != nil {
+		return nil, err
+	}
+
+	if vals[depspec.Alias] != nil {
+		vs, ok := vals[depspec.Alias].(Values)
+		if ok {
+			v, set := vs["version"]
+			if set {
+				vals["version"] = v
+			}
+		}
+	}
+
+	mod = &Module{
+		Alias:          spec.Name,
+		Values:         vals,
+		ValuesSchema:   schema,
+		Files:          files,
+		Executable:     execset,
+		ReleaseChannel: rel,
+		Dependencies:   deps,
+	}
+
+	return mod, nil
+}
+
+func (m *ModuleManager) Run() error {
+	mod, err := m.Load()
+	if err != nil {
+		return err
 	}
 
 	return m.run(mod)
 }
 
+func mergeByOverwrite(src ...Values) (res Values) {
+	res = Values{}
+	defer func() {
+		if res != nil {
+			klog.V(0).Infof("mergeByOverwrite: src=%v, res=%v", src, res)
+		}
+	}()
+	for _, s := range src {
+		for k, v := range s {
+			switch t := v.(type) {
+			case map[string]interface{}:
+				switch tt := res[k].(type) {
+				case map[string]interface{}:
+					res[k] = mergeByOverwrite(tt, t)
+				default:
+					res[k] = tt
+				}
+			default:
+				res[k] = v
+			}
+		}
+	}
+	return res
+}
+
 func (m *ModuleManager) run(mod *Module) error {
+	return mod.Walk(func(dep *Module) error {
+		return m.runSingle(dep)
+	})
+}
+
+func (m *ModuleManager) runSingle(mod *Module) (err error) {
+	defer func() {
+		if err != nil {
+			m.Logger.V(0).Info("run", "error", err.Error())
+		}
+	}()
+
 	schemaLoader := gojsonschema.NewGoLoader(mod.ValuesSchema)
-	jsonLoader := gojsonschema.NewGoLoader(mod.Values)
+	values := mergeByOverwrite(Values{}, mod.Values)
+	jsonLoader := gojsonschema.NewGoLoader(values)
 	result, err := gojsonschema.Validate(schemaLoader, jsonLoader)
 	if err != nil {
-		return err
+		return fmt.Errorf("validate: %v", err)
 	}
 	for i, err := range result.Errors() {
 		m.Logger.V(1).Info("err", "index", i, "err", err.String())
 	}
 
 	for _, f := range mod.Files {
-		u, err := render("source", f.Source, mod.Values)
+		u, err := tmpl.Render("source", f.Source, values)
 		if err != nil {
 			m.Logger.V(1).Info(err.Error())
 			return err
@@ -228,12 +442,12 @@ func (m *ModuleManager) run(mod *Module) error {
 
 		ext := filepath.Ext(target)
 		if ext == ".tpl" || ext == ".tmpl" || ext == ".gotmpl" {
-			args, err := renderArgs(f.Arguments, mod.Values)
+			args, err := tmpl.RenderArgs(f.Arguments, values)
 			if err != nil {
 				m.Logger.V(1).Info(err.Error())
 				return err
 			}
-			res, err := render("source file", string(contents), args)
+			res, err := tmpl.Render("source file", string(contents), args)
 			if err != nil {
 				m.Logger.V(1).Info(err.Error())
 				return err
@@ -248,45 +462,4 @@ func (m *ModuleManager) run(mod *Module) error {
 	}
 
 	return nil
-}
-
-func render(name, text string, data interface{}) (string, error) {
-	funcs := map[string]interface{}{}
-	tpl := template.New(name).Option("missingkey=error").Funcs(funcs)
-	tpl, err := tpl.Parse(text)
-	if err != nil {
-		return "", err
-	}
-	buf := &bytes.Buffer{}
-	if err := tpl.Execute(buf, data); err != nil {
-		return "", err
-	}
-	return buf.String(), nil
-}
-
-func renderArgs(args map[string]interface{}, data map[string]interface{}) (map[string]interface{}, error) {
-	res := map[string]interface{}{}
-
-	for k, v := range args {
-		switch t := v.(type) {
-		case map[string]interface{}:
-			r, err := renderArgs(t, data)
-			if err != nil {
-				return nil, err
-			}
-			res[k] = r
-		case string:
-			r, err := render(fmt.Sprintf("arg:%s", t), t, data)
-			if err != nil {
-				return nil, err
-			}
-			res[k] = r
-		case int, bool:
-			res[k] = t
-		default:
-			return nil, fmt.Errorf("unsupported type: value=%v, type=%T", t, t)
-		}
-	}
-
-	return res, nil
 }

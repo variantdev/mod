@@ -40,8 +40,11 @@ type Provider struct {
 
 	Logger logr.Logger
 
-	AbsWorkDir     string
-	CacheDirectory string
+	AbsWorkDir string
+	cacheDir   string
+
+	GoGetterAbsWorkDir string
+	goGetterCacheDir   string
 
 	dep *depresolver.Resolver
 }
@@ -89,6 +92,19 @@ func (s *wdOption) SetOption(r *Provider) error {
 	return nil
 }
 
+func GoGetterWD(wd string) Option {
+	return &goGetterWdOption{d: wd}
+}
+
+type goGetterWdOption struct {
+	d string
+}
+
+func (s *goGetterWdOption) SetOption(r *Provider) error {
+	r.GoGetterAbsWorkDir = s.d
+	return nil
+}
+
 func New(conf *Config, channelName string, opts ...Option) (*Provider, error) {
 	provider := &Provider{}
 
@@ -119,20 +135,35 @@ func New(conf *Config, channelName string, opts ...Option) (*Provider, error) {
 		provider.AbsWorkDir = abs
 	}
 
-	if provider.CacheDirectory == "" {
-		provider.CacheDirectory = ".variant/mod/cache"
+	if provider.GoGetterAbsWorkDir == "" {
+		provider.GoGetterAbsWorkDir = provider.AbsWorkDir
 	}
 
-	abs := filepath.IsAbs(provider.CacheDirectory)
+	if provider.cacheDir == "" {
+		provider.cacheDir = ".variant/mod/cache"
+	}
+
+	if provider.goGetterCacheDir == "" {
+		provider.goGetterCacheDir = provider.cacheDir
+	}
+
+	abs := filepath.IsAbs(provider.cacheDir)
 	if !abs {
-		provider.CacheDirectory = filepath.Join(provider.AbsWorkDir, provider.CacheDirectory)
+		provider.cacheDir = filepath.Join(provider.AbsWorkDir, provider.cacheDir)
 	}
 
-	provider.Logger.V(1).Info("init", "workdir", provider.AbsWorkDir, "cachedir", provider.CacheDirectory)
+	abs = filepath.IsAbs(provider.goGetterCacheDir)
+	if !abs {
+		provider.goGetterCacheDir = filepath.Join(provider.GoGetterAbsWorkDir, provider.goGetterCacheDir)
+	}
+
+	provider.Logger.V(1).Info("releasechannel.init", "workdir", provider.AbsWorkDir, "cachedir", provider.cacheDir, "gogetterworkdir", provider.GoGetterAbsWorkDir, "gogettercachedir", provider.goGetterCacheDir)
 
 	dep, err := depresolver.New(
-		depresolver.Home(provider.CacheDirectory),
+		depresolver.Home(provider.cacheDir),
+		depresolver.GoGetterHome(provider.goGetterCacheDir),
 		depresolver.Logger(provider.Logger),
+		depresolver.FS(provider.fs),
 	)
 	if err != nil {
 		return nil, err

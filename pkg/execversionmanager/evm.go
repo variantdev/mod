@@ -6,10 +6,11 @@ import (
 	"github.com/twpayne/go-vfs"
 	"github.com/variantdev/mod/pkg/cmdsite"
 	"github.com/variantdev/mod/pkg/depresolver"
-	"io"
+	"github.com/variantdev/mod/pkg/tmpl"
 	"k8s.io/klog/klogr"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type Config struct {
@@ -57,12 +58,16 @@ type ExecVM struct {
 
 	Logger logr.Logger
 
-	AbsWorkDir     string
-	CacheDirectory string
+	AbsWorkDir         string
+	GoGetterAbsWorkDir string
+	CacheDir           string
+	GoGetterCacheDir   string
 
 	dep *depresolver.Resolver
 
 	Template *cmdsite.CommandSite
+
+	Values map[string]interface{}
 }
 
 type Option interface {
@@ -98,13 +103,33 @@ func (s *fsOption) SetOption(r *ExecVM) error {
 func WD(wd string) Option {
 	return &wdOption{d: wd}
 }
-
 type wdOption struct {
 	d string
 }
-
 func (s *wdOption) SetOption(r *ExecVM) error {
 	r.AbsWorkDir = s.d
+	return nil
+}
+
+func GoGetterWD(goGetterWD string) Option {
+	return &goGetterWDOption{d: goGetterWD}
+}
+type goGetterWDOption struct {
+	d string
+}
+func (s *goGetterWDOption) SetOption(r *ExecVM) error {
+	r.GoGetterAbsWorkDir = s.d
+	return nil
+}
+
+func Values(values map[string]interface{}) Option {
+	return &valuesOption{vals: values}
+}
+type valuesOption struct {
+	vals map[string]interface{}
+}
+func (s *valuesOption) SetOption(r *ExecVM) error {
+	r.Values = s.vals
 	return nil
 }
 
@@ -138,24 +163,38 @@ func New(conf *Config, opts ...Option) (*ExecVM, error) {
 		provider.AbsWorkDir = abs
 	}
 
+	if provider.GoGetterAbsWorkDir == "" {
+		provider.GoGetterAbsWorkDir = provider.AbsWorkDir
+	}
+
 	if provider.Template == nil {
 		provider.Template = cmdsite.New()
 	}
 
-	if provider.CacheDirectory == "" {
-		provider.CacheDirectory = ".variant/mod/cache"
+	if provider.CacheDir == "" {
+		provider.CacheDir = ".variant/mod/cache"
 	}
 
-	abs := filepath.IsAbs(provider.CacheDirectory)
+	if provider.GoGetterCacheDir == "" {
+		provider.GoGetterCacheDir = provider.CacheDir
+	}
+
+	abs := filepath.IsAbs(provider.CacheDir)
 	if !abs {
-		provider.CacheDirectory = filepath.Join(provider.AbsWorkDir, provider.CacheDirectory)
+		provider.CacheDir = filepath.Join(provider.AbsWorkDir, provider.CacheDir)
 	}
 
-	provider.Logger.V(1).Info("init", "workdir", provider.AbsWorkDir, "cachedir", provider.CacheDirectory)
+	if !filepath.IsAbs(provider.GoGetterCacheDir) {
+		provider.GoGetterCacheDir = filepath.Join(provider.GoGetterAbsWorkDir, provider.GoGetterCacheDir)
+	}
+
+	provider.Logger.V(1).Info("execversionmanager.init", "workdir", provider.AbsWorkDir, "cachedir", provider.CacheDir, "gogetterworkdir", provider.GoGetterAbsWorkDir, "gogettercachedir", provider.GoGetterCacheDir)
 
 	dep, err := depresolver.New(
-		depresolver.Home(provider.CacheDirectory),
+		depresolver.FS(provider.fs),
+		depresolver.Home(provider.CacheDir),
 		depresolver.Logger(provider.Logger),
+		depresolver.GoGetterHome(provider.GoGetterCacheDir),
 	)
 	if err != nil {
 		return nil, err
@@ -169,13 +208,20 @@ func New(conf *Config, opts ...Option) (*ExecVM, error) {
 }
 
 func (p *ExecVM) getPlatformSpecificBin(platform Platform) (*Bin, error) {
-	localCopy, err := p.dep.Resolve(platform.Source)
+	source, err := tmpl.Render("source", platform.Source, p.Values)
 	if err != nil {
 		return nil, err
 	}
 
+	localCopy, err := p.dep.Resolve(source)
+	if err != nil {
+		return nil, err
+	}
+
+	translated := strings.Replace(localCopy, p.CacheDir, p.GoGetterCacheDir, 1)
+
 	return &Bin{
-		Path: localCopy,
+		Path: translated,
 	}, nil
 }
 
@@ -185,7 +231,7 @@ func (p *ExecVM) getBin(executable Executable) (*Bin, error) {
 		return nil, fmt.Errorf("matching platform: %v", err)
 	}
 	if !matched {
-		os, arch := osArch()
+		os, arch := OsArch()
 		return nil, fmt.Errorf("no platform matched: os=%s, arch=%s", os, arch)
 	}
 	return p.getPlatformSpecificBin(platform)
@@ -200,7 +246,18 @@ func (p *ExecVM) Locate(name string) (*Bin, error) {
 	return p.getBin(executable)
 }
 
-func (p *ExecVM) Shell() (*cmdsite.CommandSite, error) {
+func (p *ExecVM) Build() error {
+	for bin := range p.Config.Executables {
+		_, err := p.Locate(bin)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (p *ExecVM) Dirs() (map[string]struct{}, error) {
 	dirs := map[string]struct{}{}
 	for bin := range p.Config.Executables {
 		binPath, err := p.Locate(bin)
@@ -209,21 +266,18 @@ func (p *ExecVM) Shell() (*cmdsite.CommandSite, error) {
 		}
 		dirs[filepath.Dir(binPath.Path)] = struct{}{}
 	}
+	return dirs, nil
+}
 
-	path := os.Getenv("PATH")
-	for d := range dirs {
-		path = d + ":" + path
+func (p *ExecVM) Shell() (*cmdsite.CommandSite, error) {
+	dirs, err := p.Dirs()
+	if err != nil {
+		return nil, err
 	}
 
-	runcmd := *p.Template
-	runcmd.RunCmd = func(cmd string, args []string, stdout io.Writer, stderr io.Writer, env map[string]string) error {
-		newenv := map[string]string{}
-		for k, v := range env {
-			newenv[k] = v
-		}
-		newenv["PATH"] = path
-		return cmdsite.DefaultRunCommand(cmd, args, stdout, stderr, newenv)
-	}
+	return p.ShellFromDirs(dirs), nil
+}
 
-	return &runcmd, nil
+func (p *ExecVM) ShellFromDirs(dirs map[string]struct{}) *cmdsite.CommandSite {
+	return p.Template.PrependDirsToPath(dirs)
 }

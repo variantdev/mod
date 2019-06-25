@@ -7,14 +7,14 @@ import (
 )
 
 func getMatchingPlatform(p Executable) (Platform, bool, error) {
-	os, arch := osArch()
+	os, arch := OsArch()
 	klog.V(1).Infof("Using os=%s arch=%s", os, arch)
 	return matchPlatformToSystemEnvs(p, os, arch)
 }
 
-// osArch returns the OS/arch combination to be used on the current system. It
+// OsArch returns the OS/arch combination to be used on the current system. It
 // can be overridden by setting VARIANT_MOD_OS and/or VARIANT_MOD_ARCH environment variables.
-func osArch() (string, string) {
+func OsArch() (string, string) {
 	goos, goarch := runtime.GOOS, runtime.GOARCH
 	envOS, envArch := os.Getenv("VARIANT_MOD_OS"), os.Getenv("VARIANT_MOD_ARCH")
 	if envOS != "" {

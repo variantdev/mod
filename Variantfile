@@ -4,7 +4,7 @@ tasks:
       go build . && ./mod
   test:
     script: |
-      go test ./...
+      go test ./... -args -test.v
   fmt:
     script: |
       go fmt $(go list ./... | grep -v /vendor/)

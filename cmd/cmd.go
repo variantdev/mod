@@ -23,6 +23,27 @@ func Execute() {
 		},
 	}
 
+	modexec := &cobra.Command{
+		Use: "exec",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			man, err := variantmod.New(variantmod.Logger(log))
+			if err != nil {
+				return err
+			}
+			mod, err := man.Load()
+			if err != nil {
+				return err
+			}
+			sh, err := mod.Shell()
+			if err != nil {
+				return err
+			}
+			return sh.RunCommand(args[0], args[1:], os.Stdout, os.Stderr)
+		},
+	}
+
+	cmd.AddCommand(modexec)
+
 	cmd.SilenceErrors = true
 
 	fs := loginfra.Init()
