@@ -297,7 +297,22 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 
 		alias := depspec.Alias
 
-		rel.Spec.Source, err = tmpl.Render("releaseChannel.source", rel.Spec.Source, vals)
+		rel.Spec.VersionsFrom.JSONPath.Source, err = tmpl.Render("releaseChannel.source", rel.Spec.VersionsFrom.JSONPath.Source, vals)
+		if err != nil {
+			return nil, err
+		}
+
+		rel.Spec.VersionsFrom.GitTags.Source, err = tmpl.Render("releaseChannel.source", rel.Spec.VersionsFrom.GitTags.Source, vals)
+		if err != nil {
+			return nil, err
+		}
+
+		rel.Spec.VersionsFrom.GitHubReleases.Source, err = tmpl.Render("releaseChannel.source", rel.Spec.VersionsFrom.GitHubReleases.Source, vals)
+		if err != nil {
+			return nil, err
+		}
+
+		rel.Spec.VersionsFrom.DockerImageTags.Source, err = tmpl.Render("releaseChannel.source", rel.Spec.VersionsFrom.DockerImageTags.Source, vals)
 		if err != nil {
 			return nil, err
 		}

@@ -1,31 +1,22 @@
 package releasechannel
 
 import (
-	"context"
 	"fmt"
 	"github.com/Masterminds/semver"
-	"github.com/PaesslerAG/gval"
 	"github.com/PaesslerAG/jsonpath"
 	"github.com/go-logr/logr"
 	"github.com/twpayne/go-vfs"
+	"github.com/variantdev/mod/pkg/cmdsite"
 	"github.com/variantdev/mod/pkg/depresolver"
 	"github.com/variantdev/mod/pkg/maputil"
+	"github.com/variantdev/mod/pkg/vhttpget"
 	"gopkg.in/yaml.v3"
 	"k8s.io/klog/klogr"
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
-
-type Config struct {
-	ReleaseChannels map[string]Spec `yaml:"releaseChannels"`
-}
-
-type Spec struct {
-	Source      string `yaml:"source"`
-	Versions    string `yaml:"versions"`
-	Description string `yaml:"description"`
-}
 
 type Release struct {
 	Version     string
@@ -38,6 +29,8 @@ type Provider struct {
 
 	fs vfs.FS
 
+	cmdSite *cmdsite.CommandSite
+
 	Logger logr.Logger
 
 	AbsWorkDir string
@@ -46,6 +39,8 @@ type Provider struct {
 	GoGetterAbsWorkDir string
 	goGetterCacheDir   string
 
+	httpGetter vhttpget.Getter
+
 	dep *depresolver.Resolver
 }
 
@@ -53,60 +48,10 @@ type Option interface {
 	SetOption(r *Provider) error
 }
 
-func Logger(logger logr.Logger) Option {
-	return &loggerOption{l: logger}
-}
-
-type loggerOption struct {
-	l logr.Logger
-}
-
-func (s *loggerOption) SetOption(r *Provider) error {
-	r.Logger = s.l
-	return nil
-}
-
-func FS(fs vfs.FS) Option {
-	return &fsOption{f: fs}
-}
-
-type fsOption struct {
-	f vfs.FS
-}
-
-func (s *fsOption) SetOption(r *Provider) error {
-	r.fs = s.f
-	return nil
-}
-
-func WD(wd string) Option {
-	return &wdOption{d: wd}
-}
-
-type wdOption struct {
-	d string
-}
-
-func (s *wdOption) SetOption(r *Provider) error {
-	r.AbsWorkDir = s.d
-	return nil
-}
-
-func GoGetterWD(wd string) Option {
-	return &goGetterWdOption{d: wd}
-}
-
-type goGetterWdOption struct {
-	d string
-}
-
-func (s *goGetterWdOption) SetOption(r *Provider) error {
-	r.GoGetterAbsWorkDir = s.d
-	return nil
-}
-
 func New(conf *Config, channelName string, opts ...Option) (*Provider, error) {
-	provider := &Provider{}
+	provider := &Provider{
+		cmdSite: cmdsite.New(),
+	}
 
 	for _, o := range opts {
 		if err := o.SetOption(provider); err != nil {
@@ -120,6 +65,10 @@ func New(conf *Config, channelName string, opts ...Option) (*Provider, error) {
 
 	if provider.fs == nil {
 		provider.fs = vfs.HostOSFS
+	}
+
+	if provider.httpGetter == nil {
+		provider.httpGetter = vhttpget.New()
 	}
 
 	if provider.AbsWorkDir == "" {
@@ -183,7 +132,51 @@ func New(conf *Config, channelName string, opts ...Option) (*Provider, error) {
 }
 
 func (p *Provider) Latest() (*Release, error) {
-	localCopy, err := p.dep.Resolve(p.Spec.Source)
+	versionsFrom := p.Spec.VersionsFrom
+
+	if versionsFrom.JSONPath.Source != "" {
+		return p.jsonPath(versionsFrom.JSONPath)
+	} else if versionsFrom.DockerImageTags.Source != "" {
+		url := fmt.Sprintf("https://registry.hub.docker.com/v2/repositories/%s/tags/", versionsFrom.DockerImageTags.Source)
+		return p.httpJsonPath(url, "$.results[*].name")
+	} else if versionsFrom.GitTags.Source != "" {
+		cmd := fmt.Sprintf("git ls-remote --tags git://%s.git | grep -v { | awk '{ print $2 }' | cut -d'/' -f 3", versionsFrom.GitTags.Source)
+		return p.exec(cmd)
+	} else if versionsFrom.GitHubReleases.Source != "" {
+		host := versionsFrom.GitHubReleases.Host
+		if host == "" {
+			host = "api.github.com"
+		}
+		url := fmt.Sprintf("https://%s/repos/%s/releases", host, versionsFrom.GitHubReleases.Source)
+		return p.httpJsonPath(url, "$[*].tag_name")
+	}
+	return nil, fmt.Errorf("no versions provider specified")
+}
+
+func (p *Provider) exec(cmd string) (*Release, error) {
+	stdout, stderr, err := p.cmdSite.CaptureStrings("sh", []string{"-c", cmd})
+	if len(stderr) > 0 {
+		p.Logger.V(1).Info(stderr)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	entries := strings.Split(stdout, "\n")
+
+	vs := []string{}
+
+	for _, e := range entries {
+		if e != "" {
+			vs = append(vs, e)
+		}
+	}
+
+	return p.versionsToReleases(vs)
+}
+
+func (p *Provider) jsonPath(spec JSONPath) (*Release, error) {
+	localCopy, err := p.dep.Resolve(spec.Source)
 	if err != nil {
 		return nil, err
 	}
@@ -198,19 +191,30 @@ func (p *Provider) Latest() (*Release, error) {
 		return nil, err
 	}
 
-	v, err := maputil.CastKeysToStrings(tmp)
+	return p.extractVersions(tmp, spec.Versions)
+}
+
+func (p *Provider) httpJsonPath(url string, jpath string) (*Release, error) {
+	res, err := p.httpGetter.DoRequest(url)
 	if err != nil {
 		return nil, err
 	}
 
-	builder := gval.Full(jsonpath.WildcardExtension())
+	tmp := interface{}(nil)
+	if err := yaml.Unmarshal([]byte(res), &tmp); err != nil {
+		return nil, err
+	}
 
-	path, err := builder.NewEvaluable(p.Spec.Versions)
+	return p.extractVersions(tmp, jpath)
+}
+
+func (p *Provider) extractVersions(tmp interface{}, jpath string) (*Release, error) {
+	v, err := maputil.RecursivelyCastKeysToStrings(tmp)
 	if err != nil {
 		return nil, err
 	}
 
-	got, err := path(context.Background(), v)
+	got, err := jsonpath.Get(jpath, v)
 	if err != nil {
 		return nil, err
 	}
@@ -222,11 +226,11 @@ func (p *Provider) Latest() (*Release, error) {
 	case map[string]interface{}:
 		raw = append(raw, typed)
 	default:
-		return nil, fmt.Errorf("unexpected type of result from jsonpath: \"%s\": %v", p.Spec.Versions, typed)
+		return nil, fmt.Errorf("unexpected type of result from jsonpath: \"%s\": %v", jpath, typed)
 	}
 
 	if len(raw) == 0 {
-		return nil, fmt.Errorf("jsonpath: \"%s\": returned nothing: %v", p.Spec.Versions, v)
+		return nil, fmt.Errorf("jsonpath: \"%s\": returned nothing: %v", jpath, v)
 	}
 
 	vs := []string{}
@@ -247,17 +251,17 @@ func (p *Provider) Latest() (*Release, error) {
 		}
 	}
 
+	return p.versionsToReleases(vs)
+}
+
+func (p *Provider) versionsToReleases(vs []string) (*Release, error) {
 	vss := make([]*semver.Version, len(vs))
 	for i, s := range vs {
 		v, err := semver.NewVersion(s)
 		if err != nil {
-			return nil, fmt.Errorf("parsing version: %s: %v", s, err)
+			return nil, fmt.Errorf("parsing version: index %d: %q: %v", i, s, err)
 		}
 		vss[i] = v
-	}
-
-	if len(vss) == 0 {
-		return nil, fmt.Errorf("jsonpath: \"%s\": no result: %v", p.Spec.Versions, vs)
 	}
 
 	sort.Sort(semver.Collection(vss))

@@ -162,10 +162,12 @@ files:
 
 releaseChannels:
   stable:
-    source: https://coreos.com/releases/releases-stable.json
-    versions: "$"
-    type: semver
-    description: "$['{{.version}}'].release_notes"
+    versionsFrom:
+      jsonPath:
+        source: https://coreos.com/releases/releases-stable.json
+        versions: "$"
+        type: semver
+        description: "$['{{.version}}'].release_notes"
 `,
 		"/path/to/modules/go/variant.mod": `name: go
 
@@ -215,24 +217,25 @@ executables:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(dstActual) != "FOO2_FOO_BAR_2079.6.0" {
-		t.Errorf("assertion failed: expected=%s, got=%s", "FOO2_FOO_BAR_2079.6.0", string(dstActual))
+	dstExpected := "FOO2_FOO_BAR_2135.5.0"
+	if string(dstActual) != dstExpected {
+		t.Errorf("assertion failed: expected=%s, got=%s", dstExpected, string(dstActual))
 	}
 
 	coreosTxtActual, err := fs.ReadFile("/path/to/coreos.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(coreosTxtActual) != "2079.6.0" {
-		t.Errorf("assertion failed: expected=%s, got=%s", "2079.6.0", string(coreosTxtActual))
+	if string(coreosTxtActual) != "2135.5.0" {
+		t.Errorf("assertion failed: expected=%s, got=%s", "2135.5.0", string(coreosTxtActual))
 	}
 
 	myappTxtActual, err := fs.ReadFile("/path/to/myapp.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(myappTxtActual) != "1.12.6_2079.6.0" {
-		t.Errorf("assertion failed: expected=%s, got=%s", "1.12.6_2079.6.0", string(myappTxtActual))
+	if string(myappTxtActual) != "1.12.6_2135.5.0" {
+		t.Errorf("assertion failed: expected=%s, got=%s", "1.12.6_2135.5.0", string(myappTxtActual))
 	}
 
 	if _, err := fs.ReadFile("/path/to/variant.lock"); err == nil {
@@ -248,7 +251,7 @@ executables:
 		t.Fatal(err)
 	}
 	lockExpected := `coreos:
-    version: 2079.6.0
+    version: 2135.5.0
 `
 	if string(lockActual) != lockExpected {
 		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
@@ -326,10 +329,12 @@ files:
 
 releaseChannels:
   stable:
-    source: https://coreos.com/releases/releases-stable.json
-    versions: "$"
-    type: semver
-    description: "$['{{.version}}'].release_notes"
+    versionsFrom:
+      jsonPath:
+        source: https://coreos.com/releases/releases-stable.json
+        versions: "$"
+        type: semver
+        description: "$['{{.version}}'].release_notes"
 `,
 		"/path/to/modules/go/variant.mod": `name: go
 
@@ -438,7 +443,7 @@ coreos:
 		t.Fatal(err)
 	}
 	lockExpected := `coreos:
-    version: 2079.6.0
+    version: 2135.5.0
 `
 	if string(lockActual) != lockExpected {
 		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))

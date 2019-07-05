@@ -46,9 +46,11 @@ type Option interface {
 func Home(dir string) Option {
 	return &homeOption{d: dir}
 }
+
 type homeOption struct {
 	d string
 }
+
 func (s *homeOption) SetOption(r *Resolver) error {
 	r.Home = s.d
 	return nil
@@ -57,9 +59,11 @@ func (s *homeOption) SetOption(r *Resolver) error {
 func GoGetterHome(dir string) Option {
 	return &goGetterHomeOption{d: dir}
 }
+
 type goGetterHomeOption struct {
 	d string
 }
+
 func (s *goGetterHomeOption) SetOption(r *Resolver) error {
 	r.GoGetterHome = s.d
 	return nil

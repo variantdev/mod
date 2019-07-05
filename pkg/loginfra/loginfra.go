@@ -53,6 +53,5 @@ func AddKlogFlags(fs *flag.FlagSet) *flag.FlagSet {
 		fs.Set("v", v)
 	}
 
-
 	return fs
 }

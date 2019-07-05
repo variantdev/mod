@@ -103,9 +103,11 @@ func (s *fsOption) SetOption(r *ExecVM) error {
 func WD(wd string) Option {
 	return &wdOption{d: wd}
 }
+
 type wdOption struct {
 	d string
 }
+
 func (s *wdOption) SetOption(r *ExecVM) error {
 	r.AbsWorkDir = s.d
 	return nil
@@ -114,9 +116,11 @@ func (s *wdOption) SetOption(r *ExecVM) error {
 func GoGetterWD(goGetterWD string) Option {
 	return &goGetterWDOption{d: goGetterWD}
 }
+
 type goGetterWDOption struct {
 	d string
 }
+
 func (s *goGetterWDOption) SetOption(r *ExecVM) error {
 	r.GoGetterAbsWorkDir = s.d
 	return nil
@@ -125,9 +129,11 @@ func (s *goGetterWDOption) SetOption(r *ExecVM) error {
 func Values(values map[string]interface{}) Option {
 	return &valuesOption{vals: values}
 }
+
 type valuesOption struct {
 	vals map[string]interface{}
 }
+
 func (s *valuesOption) SetOption(r *ExecVM) error {
 	r.Values = s.vals
 	return nil

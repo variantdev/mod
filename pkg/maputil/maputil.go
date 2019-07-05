@@ -37,6 +37,25 @@ func CastKeysToStrings(s interface{}) (map[string]interface{}, error) {
 	return new, nil
 }
 
+func RecursivelyCastKeysToStrings(s interface{}) (interface{}, error) {
+	switch src := s.(type) {
+	case []interface{}:
+		dst := []interface{}{}
+		for _, item := range src {
+			res, err := CastKeysToStrings(item)
+			if err != nil {
+				return nil, err
+			}
+			dst = append(dst, res)
+		}
+
+		return dst, nil
+	default:
+		return CastKeysToStrings(s)
+	}
+	return nil, nil
+}
+
 func recursivelyStringifyMapKey(v interface{}) (interface{}, error) {
 	var casted_v interface{}
 	switch typed_v := v.(type) {

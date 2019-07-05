@@ -17,11 +17,35 @@ type CommandSite struct {
 	Env map[string]string
 }
 
-func New() *CommandSite {
-	return &CommandSite{
+type Option interface {
+	Set(*CommandSite)
+}
+
+func RunCmd(runcmd RunCommand) Option {
+	return &runcmdOption{
+		runcmd: runcmd,
+	}
+}
+
+type runcmdOption struct {
+	runcmd RunCommand
+}
+
+func (o *runcmdOption) Set(site *CommandSite) {
+	site.RunCmd = o.runcmd
+}
+
+func New(opt ...Option) *CommandSite {
+	site := &CommandSite{
 		RunCmd: nil,
 		Env:    map[string]string{},
 	}
+
+	for _, o := range opt {
+		o.Set(site)
+	}
+
+	return site
 }
 
 func (s *CommandSite) RunCommand(cmd string, args []string, stdout, stderr io.Writer) error {
@@ -60,16 +84,21 @@ func (r *CommandSite) CaptureBytes(binary string, args []string) ([]byte, []byte
 }
 
 func (r *CommandSite) SetPath(path string) *CommandSite {
-	runcmd := *r
-	runcmd.RunCmd = func(cmd string, args []string, stdout io.Writer, stderr io.Writer, env map[string]string) error {
+	runCmd := DefaultRunCommand
+	if r.RunCmd != nil {
+		runCmd = r.RunCmd
+	}
+
+	site := *r
+	site.RunCmd = func(cmd string, args []string, stdout io.Writer, stderr io.Writer, env map[string]string) error {
 		newenv := map[string]string{}
 		for k, v := range env {
 			newenv[k] = v
 		}
 		newenv["PATH"] = path
-		return DefaultRunCommand(cmd, args, stdout, stderr, newenv)
+		return runCmd(cmd, args, stdout, stderr, newenv)
 	}
-	return &runcmd
+	return &site
 }
 
 func (r *CommandSite) PrependPath(path string) *CommandSite {
