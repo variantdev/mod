@@ -132,28 +132,105 @@ func New(conf *Config, channelName string, opts ...Option) (*Provider, error) {
 }
 
 func (p *Provider) Latest() (*Release, error) {
-	versionsFrom := p.Spec.VersionsFrom
-
-	if versionsFrom.JSONPath.Source != "" {
-		return p.jsonPath(versionsFrom.JSONPath)
-	} else if versionsFrom.DockerImageTags.Source != "" {
-		url := fmt.Sprintf("https://registry.hub.docker.com/v2/repositories/%s/tags/", versionsFrom.DockerImageTags.Source)
-		return p.httpJsonPath(url, "$.results[*].name")
-	} else if versionsFrom.GitTags.Source != "" {
-		cmd := fmt.Sprintf("git ls-remote --tags git://%s.git | grep -v { | awk '{ print $2 }' | cut -d'/' -f 3", versionsFrom.GitTags.Source)
-		return p.exec(cmd)
-	} else if versionsFrom.GitHubReleases.Source != "" {
-		host := versionsFrom.GitHubReleases.Host
-		if host == "" {
-			host = "api.github.com"
-		}
-		url := fmt.Sprintf("https://%s/repos/%s/releases", host, versionsFrom.GitHubReleases.Source)
-		return p.httpJsonPath(url, "$[*].tag_name")
+	pp, err := p.GetProvider()
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("no versions provider specified")
+
+	return pp.Latest()
 }
 
-func (p *Provider) exec(cmd string) (*Release, error) {
+type ReleaseProvider interface {
+	Latest() (*Release, error)
+	All() ([]*Release, error)
+}
+
+func newExecProvider(cmd string, r *Provider) *execProvider {
+	return &execProvider{
+		cmd:     cmd,
+		runtime: r,
+	}
+}
+
+func newGetterProvider(spec GetterJSONPath, r *Provider) *getterJsonPathProvider {
+	return &getterJsonPathProvider{
+		spec:    spec,
+		runtime: r,
+	}
+}
+
+func newDockerHubImageTagsProvider(spec DockerImageTags, r *Provider) *httpJsonPathProvider {
+	url := fmt.Sprintf("https://registry.hub.docker.com/v2/repositories/%s/tags/", spec.Source)
+	return &httpJsonPathProvider{
+		url:      url,
+		jsonpath: "$.results[*].name",
+		runtime:  r,
+	}
+}
+
+func newGitHubReleasesProvider(spec GitHubReleases, r *Provider) *httpJsonPathProvider {
+	host := spec.Host
+	if host == "" {
+		host = "api.github.com"
+	}
+	url := fmt.Sprintf("https://%s/repos/%s/releases", host, spec.Source)
+
+	return &httpJsonPathProvider{
+		url:      url,
+		jsonpath: "$[*].tag_name",
+		runtime:  r,
+	}
+}
+
+type execProvider struct {
+	cmd string
+
+	runtime *Provider
+}
+
+var _ ReleaseProvider = &execProvider{}
+
+func (p *execProvider) Latest() (*Release, error) {
+	return p.runtime.execLatest(p.cmd)
+}
+
+func (p *execProvider) All() ([]*Release, error) {
+	return p.runtime.execAll(p.cmd)
+}
+
+type getterJsonPathProvider struct {
+	spec GetterJSONPath
+
+	runtime *Provider
+}
+
+var _ ReleaseProvider = &getterJsonPathProvider{}
+
+func (p *getterJsonPathProvider) Latest() (*Release, error) {
+	return p.runtime.getterJsonPathLatest(p.spec)
+}
+
+func (p *getterJsonPathProvider) All() ([]*Release, error) {
+	return p.runtime.getterJsonPath(p.spec)
+}
+
+type httpJsonPathProvider struct {
+	url, jsonpath string
+
+	runtime *Provider
+}
+
+var _ ReleaseProvider = &httpJsonPathProvider{}
+
+func (p *httpJsonPathProvider) Latest() (*Release, error) {
+	return p.runtime.httpJsonPathLatest(p.url, p.jsonpath)
+}
+
+func (p *httpJsonPathProvider) All() ([]*Release, error) {
+	return p.runtime.httpJsonPath(p.url, p.jsonpath)
+}
+
+func (p *Provider) exec(cmd string) ([]string, error) {
 	stdout, stderr, err := p.cmdSite.CaptureStrings("sh", []string{"-c", cmd})
 	if len(stderr) > 0 {
 		p.Logger.V(1).Info(stderr)
@@ -172,10 +249,46 @@ func (p *Provider) exec(cmd string) (*Release, error) {
 		}
 	}
 
-	return p.versionsToReleases(vs)
+	return vs, nil
 }
 
-func (p *Provider) jsonPath(spec JSONPath) (*Release, error) {
+func (p *Provider) execAll(cmd string) ([]*Release, error) {
+	vs, err := p.exec(cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.versionsToReleases(vs)
+}
+func (p *Provider) execLatest(cmd string) (*Release, error) {
+	vs, err := p.exec(cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.versionsToLatestRelease(vs)
+}
+
+func (p *Provider) getterJsonPathLatest(spec GetterJSONPath) (*Release, error) {
+	localCopy, err := p.dep.Resolve(spec.Source)
+	if err != nil {
+		return nil, err
+	}
+
+	bs, err := p.fs.ReadFile(localCopy)
+	if err != nil {
+		return nil, err
+	}
+
+	tmp := interface{}(nil)
+	if err := yaml.Unmarshal(bs, &tmp); err != nil {
+		return nil, err
+	}
+
+	return p.extractLatestVersion(tmp, spec.Versions)
+}
+
+func (p *Provider) getterJsonPath(spec GetterJSONPath) ([]*Release, error) {
 	localCopy, err := p.dep.Resolve(spec.Source)
 	if err != nil {
 		return nil, err
@@ -194,7 +307,21 @@ func (p *Provider) jsonPath(spec JSONPath) (*Release, error) {
 	return p.extractVersions(tmp, spec.Versions)
 }
 
-func (p *Provider) httpJsonPath(url string, jpath string) (*Release, error) {
+func (p *Provider) httpJsonPathLatest(url string, jpath string) (*Release, error) {
+	res, err := p.httpGetter.DoRequest(url)
+	if err != nil {
+		return nil, err
+	}
+
+	tmp := interface{}(nil)
+	if err := yaml.Unmarshal([]byte(res), &tmp); err != nil {
+		return nil, err
+	}
+
+	return p.extractLatestVersion(tmp, jpath)
+}
+
+func (p *Provider) httpJsonPath(url string, jpath string) ([]*Release, error) {
 	res, err := p.httpGetter.DoRequest(url)
 	if err != nil {
 		return nil, err
@@ -208,7 +335,46 @@ func (p *Provider) httpJsonPath(url string, jpath string) (*Release, error) {
 	return p.extractVersions(tmp, jpath)
 }
 
-func (p *Provider) extractVersions(tmp interface{}, jpath string) (*Release, error) {
+func (p *Provider) extractVersions(tmp interface{}, jpath string) ([]*Release, error) {
+	vs, err := p.extractVersionStrings(tmp, jpath)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.versionsToReleases(vs)
+}
+
+func (p *Provider) versionsToReleases(vs []string) ([]*Release, error) {
+	vss, err := p.versionStringsToSemvers(vs)
+	if err != nil {
+		return nil, err
+	}
+
+	rs := []*Release{}
+
+	for _, ver := range vss {
+		rs = append(rs, semverToRelease(ver))
+	}
+
+	return rs, nil
+}
+
+func semverToRelease(ver *semver.Version) *Release {
+	return &Release{
+		Version: ver.String(),
+	}
+}
+
+func (p *Provider) extractLatestVersion(tmp interface{}, jpath string) (*Release, error) {
+	vs, err := p.extractVersionStrings(tmp, jpath)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.versionsToLatestRelease(vs)
+}
+
+func (p *Provider) extractVersionStrings(tmp interface{}, jpath string) ([]string, error) {
 	v, err := maputil.RecursivelyCastKeysToStrings(tmp)
 	if err != nil {
 		return nil, err
@@ -251,10 +417,10 @@ func (p *Provider) extractVersions(tmp interface{}, jpath string) (*Release, err
 		}
 	}
 
-	return p.versionsToReleases(vs)
+	return vs, nil
 }
 
-func (p *Provider) versionsToReleases(vs []string) (*Release, error) {
+func (p *Provider) versionStringsToSemvers(vs []string) ([]*semver.Version, error) {
 	vss := make([]*semver.Version, len(vs))
 	for i, s := range vs {
 		v, err := semver.NewVersion(s)
@@ -266,7 +432,41 @@ func (p *Provider) versionsToReleases(vs []string) (*Release, error) {
 
 	sort.Sort(semver.Collection(vss))
 
+	return vss, nil
+}
+
+func (p *Provider) versionsToLatestRelease(vs []string) (*Release, error) {
+	vss, err := p.versionStringsToSemvers(vs)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Release{
 		Version: vss[len(vss)-1].String(),
 	}, nil
+}
+
+func (p *Provider) GetProvider() (ReleaseProvider, error) {
+	versionsFrom := p.Spec.VersionsFrom
+
+	if versionsFrom.JSONPath.Source != "" {
+		return newGetterProvider(versionsFrom.JSONPath, p), nil
+	} else if versionsFrom.DockerImageTags.Source != "" {
+		return newDockerHubImageTagsProvider(versionsFrom.DockerImageTags, p), nil
+	} else if versionsFrom.GitTags.Source != "" {
+		cmd := fmt.Sprintf("git ls-remote --tags git://%s.git | grep -v { | awk '{ print $2 }' | cut -d'/' -f 3", versionsFrom.GitTags.Source)
+		return newExecProvider(cmd, p), nil
+	} else if versionsFrom.GitHubReleases.Source != "" {
+		return newGitHubReleasesProvider(versionsFrom.GitHubReleases, p), nil
+	}
+	return nil, fmt.Errorf("no versions provider specified")
+}
+
+func (p *Provider) GetVersions() ([]*Release, error) {
+	pp, err := p.GetProvider()
+	if err != nil {
+		return nil, err
+	}
+
+	return pp.All()
 }

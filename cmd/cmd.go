@@ -42,7 +42,40 @@ func Execute() {
 		},
 	}
 
+	modlistver := &cobra.Command{
+		Use: "list-versions",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			man, err := variantmod.New(variantmod.Logger(log))
+			if err != nil {
+				return err
+			}
+			mod, err := man.Load()
+			if err != nil {
+				return err
+			}
+			return mod.ListVersions(os.Stdout)
+		},
+	}
+
+	modlistdepver := &cobra.Command{
+		Use: "list-dependency-versions",
+		Args: cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			man, err := variantmod.New(variantmod.Logger(log))
+			if err != nil {
+				return err
+			}
+			mod, err := man.Load()
+			if err != nil {
+				return err
+			}
+			return mod.ListDependencyVersions(args[0], os.Stdout)
+		},
+	}
+
 	cmd.AddCommand(modexec)
+	cmd.AddCommand(modlistver)
+	cmd.AddCommand(modlistdepver)
 
 	cmd.SilenceErrors = true
 

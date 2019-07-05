@@ -39,7 +39,9 @@ type DependencySpec struct {
 	Source         string                 `yaml:"source"`
 	Arguments      map[string]interface{} `yaml:"arguments"`
 	ReleaseChannel string                 `yaml:"releaseChannel"`
-	Alias          string
+	// ModuleVersionRange is the version range for this dependency. Works only for modules hosted on Git or GitHub
+	ModuleVersionRange string `yaml:"version"`
+	Alias              string
 
 	VersionLock map[string]interface{}
 }
@@ -346,6 +348,7 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 	}
 
 	deps := map[string]*Module{}
+	depchs := map[string]*releasechannel.Provider{}
 	for name, dspec := range spec.Dependencies {
 		dspec.Alias = name
 		if lock, ok := depspec.VersionLock[name]; ok {
@@ -373,6 +376,39 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		deps[name] = depmod
 
 		vals[dspec.Alias] = depmod.Values
+
+		// release channel
+		if !strings.Contains(dspec.Source, "github.com") {
+			continue
+		}
+
+		src, err := depresolver.Parse(dspec.Source)
+		if err != nil {
+			return nil, err
+		}
+
+		orgRepo := strings.Split(src.Dir, "/")[:2]
+		rel, err = releasechannel.New(
+			&releasechannel.Config{
+				ReleaseChannels: map[string]releasechannel.Spec{
+					"stable": {
+						VersionsFrom: releasechannel.VersionsFrom{
+							GitHubReleases: releasechannel.GitHubReleases{
+								Source: strings.Join(orgRepo, "/"),
+							},
+						},
+					},
+				},
+			},
+			"stable",
+			releasechannel.WD(m.AbsWorkDir),
+			releasechannel.GoGetterWD(m.goGetterAbsWorkDir),
+			releasechannel.FS(m.fs),
+		)
+		if err != nil {
+			return nil, err
+		}
+		depchs[name] = rel
 	}
 
 	files := []File{}
@@ -414,14 +450,15 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 	}
 
 	mod = &Module{
-		Alias:          spec.Name,
-		Values:         vals,
-		ValuesSchema:   schema,
-		Files:          files,
-		Executable:     execset,
-		ReleaseChannel: rel,
-		Dependencies:   deps,
-		VersionLock:    verLock,
+		Alias:                     spec.Name,
+		Values:                    vals,
+		ValuesSchema:              schema,
+		Files:                     files,
+		Executable:                execset,
+		ReleaseChannel:            rel,
+		Dependencies:              deps,
+		DependencyReleaseChannels: depchs,
+		VersionLock:               verLock,
 	}
 
 	return mod, nil

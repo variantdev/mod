@@ -1,9 +1,11 @@
 package variantmod
 
 import (
+	"fmt"
 	"github.com/variantdev/mod/pkg/cmdsite"
 	"github.com/variantdev/mod/pkg/execversionmanager"
 	"github.com/variantdev/mod/pkg/releasechannel"
+	"io"
 )
 
 type Values map[string]interface{}
@@ -18,7 +20,8 @@ type Module struct {
 	ReleaseChannel *releasechannel.Provider
 	Executable     *execversionmanager.ExecVM
 
-	Dependencies map[string]*Module
+	Dependencies              map[string]*Module
+	DependencyReleaseChannels map[string]*releasechannel.Provider
 
 	VersionLock map[string]interface{}
 }
@@ -68,4 +71,34 @@ func (m *Module) Shell() (*cmdsite.CommandSite, error) {
 	}
 
 	return m.Executable.ShellFromDirs(dirs), nil
+}
+
+func (m *Module) ListVersions(out io.Writer) error {
+	releases, err := m.ReleaseChannel.GetVersions()
+	if err != nil {
+		return err
+	}
+
+	for _, r := range releases {
+		fmt.Fprintf(out, "%s\t%s\n", r.Version, r.Description)
+	}
+
+	return nil
+}
+
+func (m *Module) ListDependencyVersions(name string, out io.Writer) error {
+	dep, ok := m.DependencyReleaseChannels[name]
+	if !ok {
+		return fmt.Errorf("local module is unversioned: %s", name)
+	}
+	releases, err := dep.GetVersions()
+	if err != nil {
+		return err
+	}
+
+	for _, r := range releases {
+		fmt.Fprintf(out, "%s\t%s\n", r.Version, r.Description)
+	}
+
+	return nil
 }

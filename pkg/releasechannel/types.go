@@ -9,13 +9,13 @@ type Spec struct {
 }
 
 type VersionsFrom struct {
-	JSONPath        JSONPath        `yaml:"jsonPath"`
+	JSONPath        GetterJSONPath  `yaml:"jsonPath"`
 	GitTags         GitTags         `yaml:"gitTags"`
 	GitHubReleases  GitHubReleases  `yaml:"githubReleases"`
 	DockerImageTags DockerImageTags `yaml:"dockerImageTags"`
 }
 
-type JSONPath struct {
+type GetterJSONPath struct {
 	Source      string `yaml:"source"`
 	Versions    string `yaml:"versions"`
 	Description string `yaml:"description"`
