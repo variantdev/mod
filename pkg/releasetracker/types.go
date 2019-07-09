@@ -1,7 +1,7 @@
-package releasechannel
+package releasetracker
 
 type Config struct {
-	ReleaseChannels map[string]Spec `yaml:"releaseChannels"`
+	ReleaseChannel Spec `yaml:"releaseChannel"`
 }
 
 type Spec struct {

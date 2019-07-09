@@ -7,7 +7,7 @@ import (
 	"github.com/variantdev/mod/pkg/depresolver"
 	"github.com/variantdev/mod/pkg/execversionmanager"
 	"github.com/variantdev/mod/pkg/maputil"
-	"github.com/variantdev/mod/pkg/releasechannel"
+	"github.com/variantdev/mod/pkg/releasetracker"
 	"github.com/variantdev/mod/pkg/tmpl"
 	"github.com/xeipuuv/gojsonschema"
 	"gopkg.in/yaml.v3"
@@ -21,13 +21,24 @@ import (
 type ModuleSpec struct {
 	Name string `yaml:"name"`
 
-	Values map[string]interface{} `yaml:"values"`
-	Schema map[string]interface{} `yaml:"schema"`
-	Files  map[string]FileSpec    `yaml:"files"`
+	Parameters   ParametersSpec            `yaml:"parameters"`
+	Provisioners ProvisionersSpec          `yaml:"provisioners"`
+	Dependencies map[string]DependencySpec `yaml:"dependencies"`
+	Releases     map[string]ReleaseSpec    `yaml:"releases"`
+}
 
-	Dependencies   map[string]DependencySpec `yaml:"dependencies"`
-	ReleaseChannel releasechannel.Config     `yaml:",inline"`
-	Executable     execversionmanager.Config `yaml:",inline"`
+type ReleaseSpec struct {
+	TrackerFrom releasetracker.Spec `yaml:"trackerFrom"`
+}
+
+type ParametersSpec struct {
+	Schema   map[string]interface{} `yaml:"schema"`
+	Defaults map[string]interface{} `yaml:"defaults"`
+}
+
+type ProvisionersSpec struct {
+	Files       map[string]FileSpec       `yaml:"files"`
+	Executables execversionmanager.Config `yaml:",inline"`
 }
 
 type FileSpec struct {
@@ -36,14 +47,14 @@ type FileSpec struct {
 }
 
 type DependencySpec struct {
-	Source         string                 `yaml:"source"`
-	Arguments      map[string]interface{} `yaml:"arguments"`
-	ReleaseChannel string                 `yaml:"releaseChannel"`
-	// ModuleVersionRange is the version range for this dependency. Works only for modules hosted on Git or GitHub
-	ModuleVersionRange string `yaml:"version"`
-	Alias              string
+	Source string `yaml:"source"`
+	Kind   string `yaml:"kind"`
+	// VersionConstraint is the version range for this dependency. Works only for modules hosted on Git or GitHub
+	VersionConstraint string                 `yaml:"version"`
+	Arguments         map[string]interface{} `yaml:"arguments"`
 
-	VersionLock map[string]interface{}
+	Alias          string
+	LockedVersions map[string]interface{}
 }
 
 type ModuleManager struct {
@@ -199,28 +210,27 @@ func (m *ModuleManager) Load() (*Module, error) {
 		}
 	}
 
-	versionLock := Values{}
+	lockedVers := Values{}
 	if bytes != nil {
 		m.Logger.V(2).Info("load.yaml.unmarshal.begin", "bytes", string(bytes))
-		if err := yaml.Unmarshal(bytes, &versionLock); err != nil {
+		if err := yaml.Unmarshal(bytes, &lockedVers); err != nil {
 			return nil, err
 		}
 
-		m.Logger.V(2).Info("load.yaml.unmarshal.end", "data", versionLock)
+		m.Logger.V(2).Info("load.yaml.unmarshal.end", "data", lockedVers)
 
-		versionLock, err = maputil.CastKeysToStrings(map[string]interface{}(versionLock))
+		lockedVers, err = maputil.CastKeysToStrings(map[string]interface{}(lockedVers))
 		if err != nil {
 			return nil, err
 		}
 
-		m.Logger.V(2).Info("load.yaml.castkeys", "data", versionLock)
+		m.Logger.V(2).Info("load.yaml.castkeys", "data", lockedVers)
 	}
 
 	spec := DependencySpec{
 		Source:         filepath.Join(m.AbsWorkDir, "variant.mod"),
 		Arguments:      map[string]interface{}{},
-		ReleaseChannel: "stable",
-		VersionLock:    versionLock,
+		LockedVersions: lockedVers,
 	}
 
 	m.Logger.V(2).Info("load.begin", "spec", spec)
@@ -266,153 +276,133 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 	}
 
 	spec := &ModuleSpec{
-		Name:   "variant",
-		Schema: map[string]interface{}{},
-		Values: map[string]interface{}{},
+		Name: "variant",
+		Parameters: ParametersSpec{
+			Schema:   map[string]interface{}{},
+			Defaults: map[string]interface{}{},
+		},
 	}
 	if err := yaml.Unmarshal(bytes, spec); err != nil {
 		return nil, err
 	}
 	m.Logger.V(2).Info("load", "alias", depspec.Alias, "module", spec, "dep", depspec)
 
-	var vals map[string]interface{}
-	vals, err = maputil.CastKeysToStrings(spec.Values)
+	defaults, err := maputil.CastKeysToStrings(spec.Parameters.Defaults)
 	if err != nil {
 		return nil, err
 	}
 
-	vals = mergeByOverwrite(Values{}, vals, depspec.Arguments, depspec.VersionLock)
+	vals := mergeByOverwrite(Values{}, defaults, depspec.Arguments, depspec.LockedVersions)
 
-	var rel *releasechannel.Provider
-	if len(spec.ReleaseChannel.ReleaseChannels) > 0 && depspec.VersionLock["version"] == nil {
+	trackers := map[string]*releasetracker.Tracker{}
 
-		rel, err = releasechannel.New(
-			&spec.ReleaseChannel,
-			"stable",
-			releasechannel.WD(m.AbsWorkDir),
-			releasechannel.GoGetterWD(m.goGetterAbsWorkDir),
-			releasechannel.FS(m.fs),
+	for alias, dep := range spec.Releases {
+		var rc *releasetracker.Tracker
+		rc, err = releasetracker.New(
+			dep.TrackerFrom,
+			releasetracker.WD(m.AbsWorkDir),
+			releasetracker.GoGetterWD(m.goGetterAbsWorkDir),
+			releasetracker.FS(m.fs),
 		)
 		if err != nil {
 			return nil, err
 		}
 
-		alias := depspec.Alias
-
-		rel.Spec.VersionsFrom.JSONPath.Source, err = tmpl.Render("releaseChannel.source", rel.Spec.VersionsFrom.JSONPath.Source, vals)
+		rc.Spec.VersionsFrom.JSONPath.Source, err = tmpl.Render("releaseChannel.source", rc.Spec.VersionsFrom.JSONPath.Source, vals)
 		if err != nil {
 			return nil, err
 		}
 
-		rel.Spec.VersionsFrom.GitTags.Source, err = tmpl.Render("releaseChannel.source", rel.Spec.VersionsFrom.GitTags.Source, vals)
+		rc.Spec.VersionsFrom.GitTags.Source, err = tmpl.Render("releaseChannel.source", rc.Spec.VersionsFrom.GitTags.Source, vals)
 		if err != nil {
 			return nil, err
 		}
 
-		rel.Spec.VersionsFrom.GitHubReleases.Source, err = tmpl.Render("releaseChannel.source", rel.Spec.VersionsFrom.GitHubReleases.Source, vals)
+		rc.Spec.VersionsFrom.GitHubReleases.Source, err = tmpl.Render("releaseChannel.source", rc.Spec.VersionsFrom.GitHubReleases.Source, vals)
 		if err != nil {
 			return nil, err
 		}
 
-		rel.Spec.VersionsFrom.DockerImageTags.Source, err = tmpl.Render("releaseChannel.source", rel.Spec.VersionsFrom.DockerImageTags.Source, vals)
+		rc.Spec.VersionsFrom.DockerImageTags.Source, err = tmpl.Render("releaseChannel.source", rc.Spec.VersionsFrom.DockerImageTags.Source, vals)
 		if err != nil {
 			return nil, err
 		}
 
-		rel, err := rel.Latest()
-		if err != nil {
-			return nil, err
-		}
-		mm := Values{}
-		m, ok := vals[alias]
-		if ok && m != nil {
-			mm = m.(Values)
-		}
-		mm["version"] = rel.Version
-		vals[alias] = mm
+		trackers[alias] = rc
 	}
 
 	var verLock Values
-	if depspec.VersionLock != nil {
-		verLock = depspec.VersionLock
-	}
-	if vals[depspec.Alias] != nil {
-		switch t := vals[depspec.Alias].(type) {
-		case map[string]interface{}:
-			verLock = t
-		case Values:
-			verLock = map[string]interface{}(t)
-		default:
-			return nil, fmt.Errorf("unexpected type: value=%v, type=%T", t, t)
-		}
+	if depspec.LockedVersions != nil {
+		verLock = depspec.LockedVersions
 	}
 
-	deps := map[string]*Module{}
-	depchs := map[string]*releasechannel.Provider{}
-	for name, dspec := range spec.Dependencies {
-		dspec.Alias = name
-		if lock, ok := depspec.VersionLock[name]; ok {
+	//if vals[depspec.Alias] != nil {
+	//	switch t := vals[depspec.Alias].(type) {
+	//	case map[string]interface{}:
+	//		verLock = t
+	//	case Values:
+	//		verLock = map[string]interface{}(t)
+	//	default:
+	//		return nil, fmt.Errorf("unexpected type: value=%v, type=%T", t, t)
+	//	}
+	//}
+
+	moduleDeps := map[string]*Module{}
+
+	for alias, dep := range spec.Dependencies {
+		lock, ok := verLock[alias]
+		if ok {
+			vals[alias] = Values{"version": lock}
+		} else {
+			tracker, ok := trackers[alias]
+			if ok {
+				rel, err := tracker.Latest(dep.VersionConstraint)
+				if err != nil {
+					return nil, err
+				}
+				vals[alias] = Values{"version": rel.Version}
+
+				verLock[alias] = rel.Version
+			}
+		}
+
+		if dep.Kind != "Module" {
+			continue
+		}
+
+		dep.Alias = alias
+		if lock, ok := verLock[alias]; ok {
 			switch t := lock.(type) {
 			case map[string]interface{}:
-				dspec.VersionLock = t
+				dep.LockedVersions = t
 			case Values:
-				dspec.VersionLock = map[string]interface{}(t)
+				dep.LockedVersions = map[string]interface{}(t)
 			default:
 				return nil, fmt.Errorf("unexpected error: value=%v, type=%T", t, t)
 			}
 		}
-		args, err := maputil.CastKeysToStrings(dspec.Arguments)
-		if err != nil {
-			return nil, err
-		}
-		dspec.Arguments, err = tmpl.RenderArgs(args, vals)
-		if err != nil {
-			return nil, err
-		}
-		depmod, err := m.load(dspec)
-		if err != nil {
-			return nil, err
-		}
-		deps[name] = depmod
 
-		vals[dspec.Alias] = depmod.Values
-
-		// release channel
-		if !strings.Contains(dspec.Source, "github.com") {
-			continue
-		}
-
-		src, err := depresolver.Parse(dspec.Source)
+		args, err := maputil.CastKeysToStrings(dep.Arguments)
 		if err != nil {
 			return nil, err
 		}
-
-		orgRepo := strings.Split(src.Dir, "/")[:2]
-		rel, err = releasechannel.New(
-			&releasechannel.Config{
-				ReleaseChannels: map[string]releasechannel.Spec{
-					"stable": {
-						VersionsFrom: releasechannel.VersionsFrom{
-							GitHubReleases: releasechannel.GitHubReleases{
-								Source: strings.Join(orgRepo, "/"),
-							},
-						},
-					},
-				},
-			},
-			"stable",
-			releasechannel.WD(m.AbsWorkDir),
-			releasechannel.GoGetterWD(m.goGetterAbsWorkDir),
-			releasechannel.FS(m.fs),
-		)
+		dep.Arguments, err = tmpl.RenderArgs(args, vals)
 		if err != nil {
 			return nil, err
 		}
-		depchs[name] = rel
+		loadedMod, err := m.load(dep)
+		if err != nil {
+			return nil, err
+		}
+		moduleDeps[alias] = loadedMod
+
+		vals[alias] = loadedMod.Values
+
+		m.Logger.V(1).Info("loaded dependency", "alias", alias, "vals", vals)
 	}
 
 	files := []File{}
-	for path, fspec := range spec.Files {
+	for path, fspec := range spec.Provisioners.Files {
 		f := File{
 			Path:      path,
 			Source:    fspec.Source,
@@ -421,10 +411,10 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		files = append(files, f)
 	}
 
-	spec.Schema["type"] = "object"
+	spec.Parameters.Schema["type"] = "object"
 
 	execset, err := execversionmanager.New(
-		&spec.Executable,
+		&spec.Provisioners.Executables,
 		execversionmanager.Values(vals),
 		execversionmanager.WD(m.AbsWorkDir),
 		execversionmanager.GoGetterWD(m.goGetterAbsWorkDir),
@@ -434,7 +424,7 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		return nil, err
 	}
 
-	schema, err := maputil.CastKeysToStrings(spec.Schema)
+	schema, err := maputil.CastKeysToStrings(spec.Parameters.Schema)
 	if err != nil {
 		return nil, err
 	}
@@ -450,15 +440,14 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 	}
 
 	mod = &Module{
-		Alias:                     spec.Name,
-		Values:                    vals,
-		ValuesSchema:              schema,
-		Files:                     files,
-		Executable:                execset,
-		ReleaseChannel:            rel,
-		Dependencies:              deps,
-		DependencyReleaseChannels: depchs,
-		VersionLock:               verLock,
+		Alias:           spec.Name,
+		Values:          vals,
+		ValuesSchema:    schema,
+		Files:           files,
+		Executable:      execset,
+		Dependencies:    moduleDeps,
+		ReleaseTrackers: trackers,
+		VersionLock:     verLock,
 	}
 
 	return mod, nil
@@ -477,8 +466,7 @@ func (m *ModuleManager) Up() (*Module, error) {
 	spec := DependencySpec{
 		Source:         filepath.Join(m.AbsWorkDir, "variant.mod"),
 		Arguments:      map[string]interface{}{},
-		ReleaseChannel: "stable",
-		VersionLock:    map[string]interface{}{},
+		LockedVersions: map[string]interface{}{},
 	}
 
 	mod, err := m.load(spec)

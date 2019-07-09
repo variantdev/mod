@@ -1,4 +1,4 @@
-package releasechannel
+package releasetracker
 
 import (
 	"github.com/go-logr/logr"
@@ -15,7 +15,7 @@ type loggerOption struct {
 	l logr.Logger
 }
 
-func (s *loggerOption) SetOption(r *Provider) error {
+func (s *loggerOption) SetOption(r *Tracker) error {
 	r.Logger = s.l
 	return nil
 }
@@ -28,7 +28,7 @@ type fsOption struct {
 	f vfs.FS
 }
 
-func (s *fsOption) SetOption(r *Provider) error {
+func (s *fsOption) SetOption(r *Tracker) error {
 	r.fs = s.f
 	return nil
 }
@@ -41,7 +41,7 @@ type wdOption struct {
 	d string
 }
 
-func (s *wdOption) SetOption(r *Provider) error {
+func (s *wdOption) SetOption(r *Tracker) error {
 	r.AbsWorkDir = s.d
 	return nil
 }
@@ -54,7 +54,7 @@ type goGetterWdOption struct {
 	d string
 }
 
-func (s *goGetterWdOption) SetOption(r *Provider) error {
+func (s *goGetterWdOption) SetOption(r *Tracker) error {
 	r.GoGetterAbsWorkDir = s.d
 	return nil
 }
@@ -67,7 +67,7 @@ type httpGetterOption struct {
 	g vhttpget.Getter
 }
 
-func (o *httpGetterOption) SetOption(r *Provider) error {
+func (o *httpGetterOption) SetOption(r *Tracker) error {
 	r.httpGetter = o.g
 	return nil
 }
@@ -80,7 +80,7 @@ type commanderOption struct {
 	rc cmdsite.RunCommand
 }
 
-func (o *commanderOption) SetOption(r *Provider) error {
+func (o *commanderOption) SetOption(r *Tracker) error {
 	r.cmdSite.RunCmd = o.rc
 	return nil
 }

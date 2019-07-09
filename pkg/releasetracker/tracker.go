@@ -1,4 +1,4 @@
-package releasechannel
+package releasetracker
 
 import (
 	"fmt"
@@ -19,12 +19,12 @@ import (
 )
 
 type Release struct {
+	Semver      *semver.Version
 	Version     string
 	Description string
 }
 
-type Provider struct {
-	Name string
+type Tracker struct {
 	Spec Spec
 
 	fs vfs.FS
@@ -45,11 +45,11 @@ type Provider struct {
 }
 
 type Option interface {
-	SetOption(r *Provider) error
+	SetOption(r *Tracker) error
 }
 
-func New(conf *Config, channelName string, opts ...Option) (*Provider, error) {
-	provider := &Provider{
+func New(conf Spec, opts ...Option) (*Tracker, error) {
+	provider := &Tracker{
 		cmdSite: cmdsite.New(),
 	}
 
@@ -120,46 +120,69 @@ func New(conf *Config, channelName string, opts ...Option) (*Provider, error) {
 
 	provider.dep = dep
 
-	ch, ok := conf.ReleaseChannels[channelName]
-	if !ok {
-		return nil, fmt.Errorf("release channel \"%s\" is not defined: %v", channelName, conf)
-	}
-
-	provider.Name = channelName
-	provider.Spec = ch
+	provider.Spec = conf
 
 	return provider, nil
 }
 
-func (p *Provider) Latest() (*Release, error) {
-	pp, err := p.GetProvider()
+func (p *Tracker) Latest(constraint string) (*Release, error) {
+	if constraint == "" {
+		constraint = "> 0.0.0"
+	}
+
+	cons, err := semver.NewConstraint(constraint)
 	if err != nil {
 		return nil, err
 	}
 
-	return pp.Latest()
+	all, err := p.GetReleases()
+	if err != nil {
+		return nil, err
+	}
+
+	var latestVer semver.Version
+	var latest *Release
+
+	for _, r := range all {
+		if !cons.Check(r.Semver) {
+			continue
+		}
+		if latestVer.LessThan(r.Semver) {
+			latestVer = *r.Semver
+			latest = r
+		}
+	}
+
+	if latest == nil {
+		vers := []string{}
+		for _, r := range all {
+			vers = append(vers, r.Semver.String())
+		}
+		return nil, fmt.Errorf("no semver matching %q found in %v", constraint, vers)
+	}
+
+	return latest, nil
 }
 
 type ReleaseProvider interface {
-	Latest() (*Release, error)
 	All() ([]*Release, error)
 }
 
-func newExecProvider(cmd string, r *Provider) *execProvider {
+func newExecProvider(cmd string, r *Tracker) *execProvider {
 	return &execProvider{
 		cmd:     cmd,
 		runtime: r,
 	}
 }
 
-func newGetterProvider(spec GetterJSONPath, r *Provider) *getterJsonPathProvider {
+func newGetterProvider(spec GetterJSONPath, r *Tracker) *getterJsonPathProvider {
 	return &getterJsonPathProvider{
 		spec:    spec,
 		runtime: r,
 	}
 }
 
-func newDockerHubImageTagsProvider(spec DockerImageTags, r *Provider) *httpJsonPathProvider {
+func newDockerHubImageTagsProvider(spec DockerImageTags, r *Tracker) *httpJsonPathProvider {
 	url := fmt.Sprintf("https://registry.hub.docker.com/v2/repositories/%s/tags/", spec.Source)
 	return &httpJsonPathProvider{
 		url:      url,
@@ -168,7 +191,7 @@ func newDockerHubImageTagsProvider(spec DockerImageTags, r *Provider) *httpJsonP
 	}
 }
 
-func newGitHubReleasesProvider(spec GitHubReleases, r *Provider) *httpJsonPathProvider {
+func newGitHubReleasesProvider(spec GitHubReleases, r *Tracker) *httpJsonPathProvider {
 	host := spec.Host
 	if host == "" {
 		host = "api.github.com"
@@ -185,14 +208,10 @@ func newGitHubReleasesProvider(spec GitHubReleases, r *Provider) *httpJsonPathPr
 type execProvider struct {
 	cmd string
 
-	runtime *Provider
+	runtime *Tracker
 }
 
 var _ ReleaseProvider = &execProvider{}
-
-func (p *execProvider) Latest() (*Release, error) {
-	return p.runtime.execLatest(p.cmd)
-}
 
 func (p *execProvider) All() ([]*Release, error) {
 	return p.runtime.execAll(p.cmd)
@@ -201,14 +220,10 @@ func (p *execProvider) All() ([]*Release, error) {
 type getterJsonPathProvider struct {
 	spec GetterJSONPath
 
-	runtime *Provider
+	runtime *Tracker
 }
 
 var _ ReleaseProvider = &getterJsonPathProvider{}
-
-func (p *getterJsonPathProvider) Latest() (*Release, error) {
-	return p.runtime.getterJsonPathLatest(p.spec)
-}
 
 func (p *getterJsonPathProvider) All() ([]*Release, error) {
 	return p.runtime.getterJsonPath(p.spec)
@@ -217,20 +232,16 @@ func (p *getterJsonPathProvider) All() ([]*Release, error) {
 type httpJsonPathProvider struct {
 	url, jsonpath string
 
-	runtime *Provider
+	runtime *Tracker
 }
 
 var _ ReleaseProvider = &httpJsonPathProvider{}
-
-func (p *httpJsonPathProvider) Latest() (*Release, error) {
-	return p.runtime.httpJsonPathLatest(p.url, p.jsonpath)
-}
 
 func (p *httpJsonPathProvider) All() ([]*Release, error) {
 	return p.runtime.httpJsonPath(p.url, p.jsonpath)
 }
 
-func (p *Provider) exec(cmd string) ([]string, error) {
+func (p *Tracker) exec(cmd string) ([]string, error) {
 	stdout, stderr, err := p.cmdSite.CaptureStrings("sh", []string{"-c", cmd})
 	if len(stderr) > 0 {
 		p.Logger.V(1).Info(stderr)
@@ -252,7 +263,7 @@ func (p *Provider) exec(cmd string) ([]string, error) {
 	return vs, nil
 }
 
-func (p *Provider) execAll(cmd string) ([]*Release, error) {
+func (p *Tracker) execAll(cmd string) ([]*Release, error) {
 	vs, err := p.exec(cmd)
 	if err != nil {
 		return nil, err
@@ -260,35 +271,8 @@ func (p *Provider) execAll(cmd string) ([]*Release, error) {
 
 	return p.versionsToReleases(vs)
 }
-func (p *Provider) execLatest(cmd string) (*Release, error) {
-	vs, err := p.exec(cmd)
-	if err != nil {
-		return nil, err
-	}
 
-	return p.versionsToLatestRelease(vs)
-}
-
-func (p *Provider) getterJsonPathLatest(spec GetterJSONPath) (*Release, error) {
-	localCopy, err := p.dep.Resolve(spec.Source)
-	if err != nil {
-		return nil, err
-	}
-
-	bs, err := p.fs.ReadFile(localCopy)
-	if err != nil {
-		return nil, err
-	}
-
-	tmp := interface{}(nil)
-	if err := yaml.Unmarshal(bs, &tmp); err != nil {
-		return nil, err
-	}
-
-	return p.extractLatestVersion(tmp, spec.Versions)
-}
-
-func (p *Provider) getterJsonPath(spec GetterJSONPath) ([]*Release, error) {
+func (p *Tracker) getterJsonPath(spec GetterJSONPath) ([]*Release, error) {
 	localCopy, err := p.dep.Resolve(spec.Source)
 	if err != nil {
 		return nil, err
@@ -307,21 +291,7 @@ func (p *Provider) getterJsonPath(spec GetterJSONPath) ([]*Release, error) {
 	return p.extractVersions(tmp, spec.Versions)
 }
 
-func (p *Provider) httpJsonPathLatest(url string, jpath string) (*Release, error) {
-	res, err := p.httpGetter.DoRequest(url)
-	if err != nil {
-		return nil, err
-	}
-
-	tmp := interface{}(nil)
-	if err := yaml.Unmarshal([]byte(res), &tmp); err != nil {
-		return nil, err
-	}
-
-	return p.extractLatestVersion(tmp, jpath)
-}
-
-func (p *Provider) httpJsonPath(url string, jpath string) ([]*Release, error) {
+func (p *Tracker) httpJsonPath(url string, jpath string) ([]*Release, error) {
 	res, err := p.httpGetter.DoRequest(url)
 	if err != nil {
 		return nil, err
@@ -335,7 +305,7 @@ func (p *Provider) httpJsonPath(url string, jpath string) ([]*Release, error) {
 	return p.extractVersions(tmp, jpath)
 }
 
-func (p *Provider) extractVersions(tmp interface{}, jpath string) ([]*Release, error) {
+func (p *Tracker) extractVersions(tmp interface{}, jpath string) ([]*Release, error) {
 	vs, err := p.extractVersionStrings(tmp, jpath)
 	if err != nil {
 		return nil, err
@@ -344,7 +314,7 @@ func (p *Provider) extractVersions(tmp interface{}, jpath string) ([]*Release, e
 	return p.versionsToReleases(vs)
 }
 
-func (p *Provider) versionsToReleases(vs []string) ([]*Release, error) {
+func (p *Tracker) versionsToReleases(vs []string) ([]*Release, error) {
 	vss, err := p.versionStringsToSemvers(vs)
 	if err != nil {
 		return nil, err
@@ -361,20 +331,12 @@ func (p *Provider) versionsToReleases(vs []string) ([]*Release, error) {
 
 func semverToRelease(ver *semver.Version) *Release {
 	return &Release{
+		Semver:  ver,
 		Version: ver.String(),
 	}
 }
 
-func (p *Provider) extractLatestVersion(tmp interface{}, jpath string) (*Release, error) {
-	vs, err := p.extractVersionStrings(tmp, jpath)
-	if err != nil {
-		return nil, err
-	}
-
-	return p.versionsToLatestRelease(vs)
-}
-
-func (p *Provider) extractVersionStrings(tmp interface{}, jpath string) ([]string, error) {
+func (p *Tracker) extractVersionStrings(tmp interface{}, jpath string) ([]string, error) {
 	v, err := maputil.RecursivelyCastKeysToStrings(tmp)
 	if err != nil {
 		return nil, err
@@ -420,7 +382,7 @@ func (p *Provider) extractVersionStrings(tmp interface{}, jpath string) ([]strin
 	return vs, nil
 }
 
-func (p *Provider) versionStringsToSemvers(vs []string) ([]*semver.Version, error) {
+func (p *Tracker) versionStringsToSemvers(vs []string) ([]*semver.Version, error) {
 	vss := make([]*semver.Version, len(vs))
 	for i, s := range vs {
 		v, err := semver.NewVersion(s)
@@ -435,18 +397,7 @@ func (p *Provider) versionStringsToSemvers(vs []string) ([]*semver.Version, erro
 	return vss, nil
 }
 
-func (p *Provider) versionsToLatestRelease(vs []string) (*Release, error) {
-	vss, err := p.versionStringsToSemvers(vs)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Release{
-		Version: vss[len(vss)-1].String(),
-	}, nil
-}
-
-func (p *Provider) GetProvider() (ReleaseProvider, error) {
+func (p *Tracker) GetProvider() (ReleaseProvider, error) {
 	versionsFrom := p.Spec.VersionsFrom
 
 	if versionsFrom.JSONPath.Source != "" {
@@ -462,7 +413,7 @@ func (p *Provider) GetProvider() (ReleaseProvider, error) {
 	return nil, fmt.Errorf("no versions provider specified")
 }
 
-func (p *Provider) GetVersions() ([]*Release, error) {
+func (p *Tracker) GetReleases() ([]*Release, error) {
 	pp, err := p.GetProvider()
 	if err != nil {
 		return nil, err

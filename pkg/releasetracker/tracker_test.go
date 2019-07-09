@@ -1,4 +1,4 @@
-package releasechannel
+package releasetracker
 
 import (
 	"github.com/variantdev/mod/pkg/cmdsite"
@@ -8,14 +8,13 @@ import (
 )
 
 func TestProvider_JSONPath(t *testing.T) {
-	input := `releaseChannels:
-  stable:
-    versionsFrom:
-      jsonPath:
-        source: https://coreos.com/releases/releases-stable.json
-        versions: "$"
-        type: semver
-        description: "$['{{.version}}'].release_notes"
+	input := `releaseChannel:
+  versionsFrom:
+    jsonPath:
+      source: https://coreos.com/releases/releases-stable.json
+      versions: "$"
+      type: semver
+      description: "$['{{.version}}'].release_notes"
 `
 
 	conf := &Config{}
@@ -23,12 +22,12 @@ func TestProvider_JSONPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stable, err := New(conf, "stable")
+	stable, err := New(conf.ReleaseChannel)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	latest, err := stable.Latest()
+	latest, err := stable.Latest("= 2079.5.1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,14 +38,13 @@ func TestProvider_JSONPath(t *testing.T) {
 }
 
 func TestProvider_GitTags(t *testing.T) {
-	input := `releaseChannels:
-  stable:
-    versionsFrom:
-      # This basically runs "git ls-remote --tags git://github.com/mumoshu/variant.git" to fetch available versions
-      # Examples can be obtained by running:
-      #   git ls-remote --tags git://github.com/mumoshu/variant.git | grep -v { | awk '{ print $2 }' | cut -d'/' -f 3
-      gitTags:
-        source: github.com/mumoshu/variant
+	input := `releaseChannel:
+  versionsFrom:
+    # This basically runs "git ls-remote --tags git://github.com/mumoshu/variant.git" to fetch available versions
+    # Examples can be obtained by running:
+    #   git ls-remote --tags git://github.com/mumoshu/variant.git | grep -v { | awk '{ print $2 }' | cut -d'/' -f 3
+    gitTags:
+      source: github.com/mumoshu/variant
 `
 
 	conf := &Config{}
@@ -80,12 +78,12 @@ v0.31.1
 	cmdr := cmdsite.NewTester(map[cmdsite.CommandInput]cmdsite.CommandOutput{
 		expectedInput: {Stdout: expectedStdout},
 	})
-	stable, err := New(conf, "stable", Commander(cmdr))
+	stable, err := New(conf.ReleaseChannel, Commander(cmdr))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	latest, err := stable.Latest()
+	latest, err := stable.Latest("= 0.31.1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,12 +95,11 @@ v0.31.1
 }
 
 func TestProvider_GitHubReleases(t *testing.T) {
-	input := `releaseChannels:
-  stable:
-    versionsFrom:
-      # This basically fetch "curl https://api.github.com/repos/mumoshu/variant/releases | jq -r .[].tag_name"
-      githubReleases:
-        source: mumoshu/variant
+	input := `releaseChannel:
+  versionsFrom:
+    # This basically fetch "curl https://api.github.com/repos/mumoshu/variant/releases | jq -r .[].tag_name"
+    githubReleases:
+      source: mumoshu/variant
 `
 
 	conf := &Config{}
@@ -328,12 +325,12 @@ func TestProvider_GitHubReleases(t *testing.T) {
 		vhttpget.TestGetInput{URL: "https://api.github.com/repos/mumoshu/variant/releases"}: expectedOut,
 	}
 	httpGetter := vhttpget.NewTester(gets)
-	stable, err := New(conf, "stable", HttpGetter(httpGetter))
+	stable, err := New(conf.ReleaseChannel, HttpGetter(httpGetter))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	latest, err := stable.Latest()
+	latest, err := stable.Latest("= 0.31.1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,12 +342,11 @@ func TestProvider_GitHubReleases(t *testing.T) {
 }
 
 func TestProvider_DockerRegistryImageTags(t *testing.T) {
-	input := `releaseChannels:
-  stable:
-    versionsFrom:
-      # This basically fetch "curl https://registry.hub.docker.com/v2/repositories/mumoshu/helmfile-chatops/tags/ | jq -r .results[].name"
-      dockerImageTags:
-        source: mumoshu/helmfile-chatops
+	input := `releaseChannel:
+  versionsFrom:
+    # This basically fetch "curl https://registry.hub.docker.com/v2/repositories/mumoshu/helmfile-chatops/tags/ | jq -r .results[].name"
+    dockerImageTags:
+      source: mumoshu/helmfile-chatops
 `
 
 	conf := &Config{}
@@ -362,12 +358,12 @@ func TestProvider_DockerRegistryImageTags(t *testing.T) {
 		vhttpget.TestGetInput{URL: "https://registry.hub.docker.com/v2/repositories/mumoshu/helmfile-chatops/tags/"}: `{"count": 2, "next": null, "previous": null, "results": [{"name": "0.2.0", "full_size": 89867735, "images": [{"size": 89867735, "architecture": "amd64", "variant": null, "features": null, "os": "linux", "os_version": null, "os_features": null}], "id": 60688451, "repository": 7345782, "creator": 17205, "last_updater": 17205, "last_updated": "2019-07-02T07:02:05.424914Z", "image_id": null, "v2": true}, {"name": "0.1.0", "full_size": 89738457, "images": [{"size": 89738457, "architecture": "amd64", "variant": null, "features": null, "os": "linux", "os_version": null, "os_features": null}], "id": 60687743, "repository": 7345782, "creator": 17205, "last_updater": 17205, "last_updated": "2019-07-02T06:51:44.860914Z", "image_id": null, "v2": true}]}`,
 	}
 	httpGetter := vhttpget.NewTester(gets)
-	stable, err := New(conf, "stable", HttpGetter(httpGetter))
+	stable, err := New(conf.ReleaseChannel, HttpGetter(httpGetter))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	latest, err := stable.Latest()
+	latest, err := stable.Latest("= 0.2.0")
 	if err != nil {
 		t.Fatal(err)
 	}

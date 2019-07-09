@@ -68,22 +68,23 @@ func TestModule(t *testing.T) {
 func TestModuleFile_Simple(t *testing.T) {
 	files := map[string]interface{}{
 		"/path/to/variant.mod": `
-schema:
-  properties:
-    foo:
-      type: string
-  required:
-  - foo
+parameters:
+  schema:
+    properties:
+      foo:
+        type: string
+    required:
+    - foo
+  defaults:
+    foo: FOO
 
-values:
-  foo: FOO
-
-files:
-  dst.yaml:
-    source: src.yaml.tpl
-    arguments:
-      foo: FOO2
-      arg1: "{{.foo}}_BAR"
+provisioners:
+  files:
+    dst.yaml:
+      source: src.yaml.tpl
+      arguments:
+        foo: FOO2
+        arg1: "{{.foo}}_BAR"
 `,
 		"/path/to/src.yaml.tpl": `{{.foo}}_{{.arg1}}`,
 	}
@@ -120,32 +121,33 @@ func TestModuleFile_Dependencies(t *testing.T) {
 		"/path/to/variant.mod": `
 name: myapp
 
-schema:
-  properties:
-    foo:
-      type: string
-  required:
-  - foo
+parameters:
+  schema:
+    properties:
+      foo:
+        type: string
+    required:
+    - foo
+  defaults:
+    foo: FOO
 
-values:
-  foo: FOO
-
-files:
-  dst.yaml:
-    source: src.yaml.tpl
-    arguments:
-      foo: FOO2
-      arg1: "{{.foo}}_BAR_{{.coreos.version}}"
-  myapp.txt:
-    source: myapp.txt.tpl
-    arguments:
-      go: "{{.go.version}}"
-      coreos: "{{.coreos.version}}"
+provisioners:
+  files:
+    dst.yaml:
+      source: src.yaml.tpl
+      arguments:
+        foo: FOO2
+        arg1: "{{.foo}}_BAR_{{.coreos.version}}"
+    myapp.txt:
+      source: myapp.txt.tpl
+      arguments:
+        go: "{{.go.version}}"
+        coreos: "{{.coreos.version}}"
 
 dependencies:
   coreos:
+    type: Module
     source: ./modules/coreos
-    releaseChannel: stable
   go:
     source: ./modules/go
 `,
@@ -154,15 +156,16 @@ dependencies:
 		"/path/to/myapp.txt.tpl":  `{{.go}}_{{.coreos}}`,
 		"/path/to/modules/coreos/variant.mod": `name: coreos
 
-files:
-  coreos.txt:
-    source: coreos.txt.tpl
-    arguments:
-      ver: "{{.version}}"
+provisioners:
+  files:
+    coreos.txt:
+      source: coreos.txt.tpl
+      arguments:
+        ver: "{{.version}}"
 
-releaseChannels:
-  stable:
-    versionsFrom:
+releases:
+  coreos:
+    trackerFrom:
       jsonPath:
         source: https://coreos.com/releases/releases-stable.json
         versions: "$"
@@ -171,24 +174,26 @@ releaseChannels:
 `,
 		"/path/to/modules/go/variant.mod": `name: go
 
-values:
-  version: "1.12.6"
+parameters:
+  defaults:
+    version: "1.12.6"
 
-executables:
-  go:
-    platforms:
-      # Adds $VARIANT_MOD_PATH/mod/cache/CACHE_KEY/go/bin/go to $PATH
-      # Or its shim at $VARIANT_MOD_PATH/MODULE_NAME/shims
-    - source: https://dl.google.com/go/go{{.version}}.darwin-amd64.tar.gz@go/bin/go
-      selector:
-        matchLabels:
-          os: darwin
-          arch: amd64
-    - source: https://dl.google.com/go/go{{.version}}.linux-amd64.tar.gz@go/bin/go
-      selector:
-        matchLabels:
-          os: linux
-          arch: amd64
+provisioners:
+  executables:
+    go:
+      platforms:
+        # Adds $VARIANT_MOD_PATH/mod/cache/CACHE_KEY/go/bin/go to $PATH
+        # Or its shim at $VARIANT_MOD_PATH/MODULE_NAME/shims
+      - source: https://dl.google.com/go/go{{.version}}.darwin-amd64.tar.gz@go/bin/go
+        selector:
+          matchLabels:
+            os: darwin
+            arch: amd64
+      - source: https://dl.google.com/go/go{{.version}}.linux-amd64.tar.gz@go/bin/go
+        selector:
+          matchLabels:
+            os: linux
+            arch: amd64
 `,
 	}
 	fs, clean, err := vfst.NewTestFS(files)
@@ -287,33 +292,35 @@ func TestModuleFile_DependenciesLocking(t *testing.T) {
 		"/path/to/variant.mod": `
 name: myapp
 
-schema:
-  properties:
-    foo:
-      type: string
-  required:
-  - foo
+parameters:
+  schema:
+    properties:
+      foo:
+        type: string
+    required:
+    - foo
+  defaults:
+    foo: FOO
 
-values:
-  foo: FOO
-
-files:
-  dst.yaml:
-    source: src.yaml.tpl
-    arguments:
-      foo: FOO2
-      arg1: "{{.foo}}_BAR_{{.coreos.version}}"
-  myapp.txt:
-    source: myapp.txt.tpl
-    arguments:
-      go: "{{.go.version}}"
-      coreos: "{{.coreos.version}}"
+provisioners:
+  files:
+    dst.yaml:
+      source: src.yaml.tpl
+      arguments:
+        foo: FOO2
+        arg1: "{{.foo}}_BAR_{{.coreos.version}}"
+    myapp.txt:
+      source: myapp.txt.tpl
+      arguments:
+        go: "{{.go.version}}"
+        coreos: "{{.coreos.version}}"
 
 dependencies:
   coreos:
+    kind: Module
     source: ./modules/coreos
-    releaseChannel: stable
   go:
+    kind: Module
     source: ./modules/go
 `,
 		"/path/to/src.yaml.tpl":   `{{.foo}}_{{.arg1}}`,
@@ -321,15 +328,16 @@ dependencies:
 		"/path/to/myapp.txt.tpl":  `{{.go}}_{{.coreos}}`,
 		"/path/to/modules/coreos/variant.mod": `name: coreos
 
-files:
-  coreos.txt:
-    source: coreos.txt.tpl
-    arguments:
-      ver: "{{.version}}"
+provisioners:
+  files:
+    coreos.txt:
+      source: coreos.txt.tpl
+      arguments:
+        ver: "{{.version}}"
 
-releaseChannels:
-  stable:
-    versionsFrom:
+releases:
+  coreos:
+    trackerFrom:
       jsonPath:
         source: https://coreos.com/releases/releases-stable.json
         versions: "$"
@@ -338,24 +346,26 @@ releaseChannels:
 `,
 		"/path/to/modules/go/variant.mod": `name: go
 
-values:
-  version: "1.12.6"
+parameters:
+  defaults:
+    version: "1.12.6"
 
-executables:
-  go:
-    platforms:
-      # Adds $VARIANT_MOD_PATH/mod/cache/CACHE_KEY/go/bin/go to $PATH
-      # Or its shim at $VARIANT_MOD_PATH/MODULE_NAME/shims
-    - source: https://dl.google.com/go/go{{.version}}.darwin-amd64.tar.gz@go/bin/go
-      selector:
-        matchLabels:
-          os: darwin
-          arch: amd64
-    - source: https://dl.google.com/go/go{{.version}}.linux-amd64.tar.gz@go/bin/go
-      selector:
-        matchLabels:
-          os: linux
-          arch: amd64
+provisioners:
+  executables:
+    go:
+      platforms:
+        # Adds $VARIANT_MOD_PATH/mod/cache/CACHE_KEY/go/bin/go to $PATH
+        # Or its shim at $VARIANT_MOD_PATH/MODULE_NAME/shims
+      - source: https://dl.google.com/go/go{{.version}}.darwin-amd64.tar.gz@go/bin/go
+        selector:
+          matchLabels:
+            os: darwin
+            arch: amd64
+      - source: https://dl.google.com/go/go{{.version}}.linux-amd64.tar.gz@go/bin/go
+        selector:
+          matchLabels:
+            os: linux
+            arch: amd64
 `,
 		"/path/to/variant.lock": `
 coreos:

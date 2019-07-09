@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"github.com/variantdev/mod/pkg/cmdsite"
 	"github.com/variantdev/mod/pkg/execversionmanager"
-	"github.com/variantdev/mod/pkg/releasechannel"
+	"github.com/variantdev/mod/pkg/releasetracker"
 	"io"
 )
 
@@ -17,13 +17,18 @@ type Module struct {
 	ValuesSchema Values
 	Files        []File
 
-	ReleaseChannel *releasechannel.Provider
+	ReleaseChannel *releasetracker.Tracker
 	Executable     *execversionmanager.ExecVM
 
-	Dependencies              map[string]*Module
-	DependencyReleaseChannels map[string]*releasechannel.Provider
+	Dependencies    map[string]*Module
+	ReleaseTrackers map[string]*releasetracker.Tracker
 
 	VersionLock map[string]interface{}
+}
+
+type LockedVersions struct {
+	Modules  Values `yaml:"modules"`
+	Releases Values `yaml:"releases"`
 }
 
 type File struct {
@@ -73,25 +78,12 @@ func (m *Module) Shell() (*cmdsite.CommandSite, error) {
 	return m.Executable.ShellFromDirs(dirs), nil
 }
 
-func (m *Module) ListVersions(out io.Writer) error {
-	releases, err := m.ReleaseChannel.GetVersions()
-	if err != nil {
-		return err
-	}
-
-	for _, r := range releases {
-		fmt.Fprintf(out, "%s\t%s\n", r.Version, r.Description)
-	}
-
-	return nil
-}
-
-func (m *Module) ListDependencyVersions(name string, out io.Writer) error {
-	dep, ok := m.DependencyReleaseChannels[name]
+func (m *Module) ListVersions(depName string, out io.Writer) error {
+	dep, ok := m.ReleaseTrackers[depName]
 	if !ok {
-		return fmt.Errorf("local module is unversioned: %s", name)
+		return fmt.Errorf("local module is unversioned: %s", depName)
 	}
-	releases, err := dep.GetVersions()
+	releases, err := dep.GetReleases()
 	if err != nil {
 		return err
 	}
