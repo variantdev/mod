@@ -58,8 +58,24 @@ func Execute() {
 		},
 	}
 
+	modup := &cobra.Command{
+		Use:  "up",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			man, err := variantmod.New(variantmod.Logger(log))
+			if err != nil {
+				return err
+			}
+			_, err = man.Up()
+			if err != nil {
+				return err
+			}
+			return nil
+		},
+	}
+
 	cmd.AddCommand(modexec)
 	cmd.AddCommand(modlistdepver)
+	cmd.AddCommand(modup)
 
 	cmd.SilenceErrors = true
 

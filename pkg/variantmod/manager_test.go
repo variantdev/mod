@@ -137,18 +137,19 @@ provisioners:
       source: src.yaml.tpl
       arguments:
         foo: FOO2
-        arg1: "{{.foo}}_BAR_{{.coreos.version}}"
+        arg1: "{{.foo}}_BAR_{{.coreos.coreos.version}}"
     myapp.txt:
       source: myapp.txt.tpl
       arguments:
         go: "{{.go.version}}"
-        coreos: "{{.coreos.version}}"
+        coreos: "{{.coreos.coreos.version}}"
 
 dependencies:
   coreos:
-    type: Module
+    kind: Module
     source: ./modules/coreos
   go:
+    kind: Module
     source: ./modules/go
 `,
 		"/path/to/src.yaml.tpl":   `{{.foo}}_{{.arg1}}`,
@@ -165,12 +166,16 @@ provisioners:
 
 releases:
   coreos:
-    trackerFrom:
+    versionsFrom:
       jsonPath:
         source: https://coreos.com/releases/releases-stable.json
         versions: "$"
         type: semver
         description: "$['{{.version}}'].release_notes"
+
+dependencies:
+  coreos:
+    version: 2135.5.0
 `,
 		"/path/to/modules/go/variant.mod": `name: go
 
@@ -256,7 +261,8 @@ provisioners:
 		t.Fatal(err)
 	}
 	lockExpected := `coreos:
-    version: 2135.5.0
+    coreos: 2135.5.0
+go: {}
 `
 	if string(lockActual) != lockExpected {
 		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
@@ -337,12 +343,16 @@ provisioners:
 
 releases:
   coreos:
-    trackerFrom:
+    versionsFrom:
       jsonPath:
         source: https://coreos.com/releases/releases-stable.json
         versions: "$"
         type: semver
         description: "$['{{.version}}'].release_notes"
+
+dependencies:
+  coreos:
+    version: ">= 2135.5.0, < 2135.5.1"
 `,
 		"/path/to/modules/go/variant.mod": `name: go
 
@@ -398,24 +408,24 @@ coreos:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(dstActual) != "FOO2_FOO_BAR_2079.5.0" {
-		t.Errorf("assertion failed: expected=%s, got=%s", "FOO2_FOO_BAR_2079.5.0", string(dstActual))
+	if string(dstActual) != "FOO2_FOO_BAR_2135.5.0" {
+		t.Errorf("assertion failed: expected=%s, got=%s", "FOO2_FOO_BAR_2135.5.0", string(dstActual))
 	}
 
 	coreosTxtActual, err := fs.ReadFile("/path/to/coreos.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(coreosTxtActual) != "2079.5.0" {
-		t.Errorf("assertion failed: expected=%s, got=%s", "2079.5.0", string(coreosTxtActual))
+	if string(coreosTxtActual) != "2135.5.0" {
+		t.Errorf("assertion failed: expected=%s, got=%s", "2135.5.0", string(coreosTxtActual))
 	}
 
 	myappTxtActual, err := fs.ReadFile("/path/to/myapp.txt")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(myappTxtActual) != "1.12.6_2079.5.0" {
-		t.Errorf("assertion failed: expected=%s, got=%s", "1.12.6_2079.5.0", string(myappTxtActual))
+	if string(myappTxtActual) != "1.12.6_2135.5.0" {
+		t.Errorf("assertion failed: expected=%s, got=%s", "1.12.6_2135.5.0", string(myappTxtActual))
 	}
 
 	sh, err := mod.Shell()
@@ -453,7 +463,8 @@ coreos:
 		t.Fatal(err)
 	}
 	lockExpected := `coreos:
-    version: 2135.5.0
+    coreos: 2135.5.0
+go: {}
 `
 	if string(lockActual) != lockExpected {
 		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))

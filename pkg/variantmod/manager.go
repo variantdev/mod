@@ -21,14 +21,10 @@ import (
 type ModuleSpec struct {
 	Name string `yaml:"name"`
 
-	Parameters   ParametersSpec            `yaml:"parameters"`
-	Provisioners ProvisionersSpec          `yaml:"provisioners"`
-	Dependencies map[string]DependencySpec `yaml:"dependencies"`
-	Releases     map[string]ReleaseSpec    `yaml:"releases"`
-}
-
-type ReleaseSpec struct {
-	TrackerFrom releasetracker.Spec `yaml:"trackerFrom"`
+	Parameters   ParametersSpec                 `yaml:"parameters"`
+	Provisioners ProvisionersSpec               `yaml:"provisioners"`
+	Dependencies map[string]DependencySpec      `yaml:"dependencies"`
+	Releases     map[string]releasetracker.Spec `yaml:"releases"`
 }
 
 type ParametersSpec struct {
@@ -281,6 +277,7 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 			Schema:   map[string]interface{}{},
 			Defaults: map[string]interface{}{},
 		},
+		Releases: map[string]releasetracker.Spec{},
 	}
 	if err := yaml.Unmarshal(bytes, spec); err != nil {
 		return nil, err
@@ -299,7 +296,7 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 	for alias, dep := range spec.Releases {
 		var rc *releasetracker.Tracker
 		rc, err = releasetracker.New(
-			dep.TrackerFrom,
+			dep,
 			releasetracker.WD(m.AbsWorkDir),
 			releasetracker.GoGetterWD(m.goGetterAbsWorkDir),
 			releasetracker.FS(m.fs),
@@ -334,6 +331,8 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 	var verLock Values
 	if depspec.LockedVersions != nil {
 		verLock = depspec.LockedVersions
+	} else {
+		verLock = Values{}
 	}
 
 	//if vals[depspec.Alias] != nil {
@@ -352,10 +351,13 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 	for alias, dep := range spec.Dependencies {
 		lock, ok := verLock[alias]
 		if ok {
+			m.Logger.V(2).Info("tracker unused. lock version exists", "alias", alias, "verLock", verLock)
 			vals[alias] = Values{"version": lock}
 		} else {
+			m.Logger.V(2).Info("finding tracker", "alias", alias, "trackers", trackers)
 			tracker, ok := trackers[alias]
 			if ok {
+				m.Logger.V(2).Info("tracker found", "alias", alias)
 				rel, err := tracker.Latest(dep.VersionConstraint)
 				if err != nil {
 					return nil, err
@@ -363,6 +365,8 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 				vals[alias] = Values{"version": rel.Version}
 
 				verLock[alias] = rel.Version
+			} else {
+				m.Logger.V(2).Info("no tracker found", "alias", alias)
 			}
 		}
 
@@ -390,6 +394,7 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		if err != nil {
 			return nil, err
 		}
+		m.Logger.V(2).Info("loading dependency", "alias", alias, "dep", dep)
 		loadedMod, err := m.load(dep)
 		if err != nil {
 			return nil, err
@@ -463,10 +468,11 @@ func (m *ModuleManager) Run() error {
 }
 
 func (m *ModuleManager) Up() (*Module, error) {
+	m.Logger.V(2).Info("running up")
 	spec := DependencySpec{
 		Source:         filepath.Join(m.AbsWorkDir, "variant.mod"),
 		Arguments:      map[string]interface{}{},
-		LockedVersions: map[string]interface{}{},
+		LockedVersions: Values{},
 	}
 
 	mod, err := m.load(spec)
