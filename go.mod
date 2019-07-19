@@ -9,6 +9,7 @@ require (
 	github.com/exponent-io/jsonpath v0.0.0-20151013193312-d6023ce2651d // indirect
 	github.com/ghodss/yaml v1.0.0
 	github.com/go-logr/logr v0.1.0
+	github.com/google/go-cmp v0.3.0 // indirect
 	github.com/hashicorp/go-getter v1.3.0
 	github.com/spf13/cobra v0.0.5
 	github.com/spf13/pflag v1.0.3

@@ -3,6 +3,7 @@ package variantmod
 import (
 	"fmt"
 	"github.com/twpayne/go-vfs/vfst"
+	"github.com/variantdev/mod/pkg/cmdsite"
 	"github.com/variantdev/mod/pkg/execversionmanager"
 	"github.com/variantdev/mod/pkg/loginfra"
 	"k8s.io/klog"
@@ -43,7 +44,7 @@ func TestModule(t *testing.T) {
 				Source: "git::https://github.com/cloudposse/helmfiles.git@releases/kiam.yaml?ref=0.40.0",
 			},
 		},
-		Dependencies: map[string]*Module{},
+		Submodules: map[string]*Module{},
 	}
 
 	fs, clean, err := vfst.NewTestFS(map[string]interface{}{})
@@ -162,7 +163,7 @@ provisioners:
     coreos.txt:
       source: coreos.txt.tpl
       arguments:
-        ver: "{{.version}}"
+        ver: "{{.coreos.version}}"
 
 releases:
   coreos:
@@ -260,9 +261,7 @@ provisioners:
 	if err != nil {
 		t.Fatal(err)
 	}
-	lockExpected := `coreos:
-    coreos: 2135.5.0
-go: {}
+	lockExpected := `dependencies: {}
 `
 	if string(lockActual) != lockExpected {
 		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
@@ -339,7 +338,7 @@ provisioners:
     coreos.txt:
       source: coreos.txt.tpl
       arguments:
-        ver: "{{.version}}"
+        ver: "{{.coreos.version}}"
 
 releases:
   coreos:
@@ -378,8 +377,9 @@ provisioners:
             arch: amd64
 `,
 		"/path/to/variant.lock": `
-coreos:
-  version: "2079.5.0"
+dependencies:
+  coreos:
+    version: "2079.5.0"
 `,
 	}
 	fs, clean, err := vfst.NewTestFS(files)
@@ -408,8 +408,8 @@ coreos:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(dstActual) != "FOO2_FOO_BAR_2135.5.0" {
-		t.Errorf("assertion failed: expected=%s, got=%s", "FOO2_FOO_BAR_2135.5.0", string(dstActual))
+	if string(dstActual) != "FOO2_FOO_BAR_2079.5.0" {
+		t.Errorf("assertion failed: expected=%s, got=%s", "FOO2_FOO_BAR_2079.5.0", string(dstActual))
 	}
 
 	coreosTxtActual, err := fs.ReadFile("/path/to/coreos.txt")
@@ -424,8 +424,8 @@ coreos:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(myappTxtActual) != "1.12.6_2135.5.0" {
-		t.Errorf("assertion failed: expected=%s, got=%s", "1.12.6_2135.5.0", string(myappTxtActual))
+	if string(myappTxtActual) != "1.12.6_2079.5.0" {
+		t.Errorf("assertion failed: expected=%s, got=%s", "1.12.6_2079.5.0", string(myappTxtActual))
 	}
 
 	sh, err := mod.Shell()
@@ -462,11 +462,165 @@ coreos:
 	if err != nil {
 		t.Fatal(err)
 	}
-	lockExpected := `coreos:
-    coreos: 2135.5.0
-go: {}
+	lockExpected := `dependencies: {}
 `
 	if string(lockActual) != lockExpected {
 		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
 	}
+}
+
+func TestDependencyLockinge_EksK8s(t *testing.T) {
+	if testing.Verbose() {
+	}
+
+	files := map[string]interface{}{
+		"/path/to/variant.mod": `
+name: myapp
+
+provisioners:
+  files:
+    cluster.yaml:
+      source: cluster.yaml.tpl
+      arguments:
+        name: k8s1
+        region: ap-northeast-1
+        version: "{{.Dependencies.k8s.version}}"
+
+dependencies:
+  k8s:
+    releasesFrom:
+      exec:
+        command: go
+        args:
+        - run
+        - main.go
+    version: "> 1.10"
+`,
+		"/path/to/cluster.yaml.tpl": `apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: {{.name}}
+  region: {{.region}}
+  version: {{.version}}
+nodeGroups:
+- name: ng1
+  instanceType: m5.xlarge
+  desiredCapacity: 1
+  volumeSize: 100
+  volumeType: gp2
+  volumeEncrypted: true
+`,
+		"/path/to/variant.lock": `
+dependencies:
+  k8s:
+    version: "1.10.13"
+`,
+	}
+	fs, clean, err := vfst.NewTestFS(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clean()
+	log := klogr.New()
+	klog.SetOutput(os.Stderr)
+	klog.V(2).Info(fmt.Sprintf("temp dir: %v", fs.TempDir()))
+
+	expectedInput := cmdsite.NewInput("go", []string{"run", "main.go"}, map[string]string{})
+	expectedStdout := `1.13.7
+1.12.6
+1.11.8
+1.10.13
+`
+	cmdr := cmdsite.NewTester(map[cmdsite.CommandInput]cmdsite.CommandOutput{
+		expectedInput: {Stdout: expectedStdout},
+	})
+
+	man, err := New(Logger(log), FS(fs), WD("/path/to"), GoGetterWD(filepath.Join(fs.TempDir(), "path", "to")), Commander(cmdr))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mod, err := man.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := man.run(mod); err != nil {
+		t.Fatal(err)
+	}
+
+	clusterYaml1Expected := `apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: k8s1
+  region: ap-northeast-1
+  version: 1.10.13
+nodeGroups:
+- name: ng1
+  instanceType: m5.xlarge
+  desiredCapacity: 1
+  volumeSize: 100
+  volumeType: gp2
+  volumeEncrypted: true
+`
+	clusterYaml1Actual, err := fs.ReadFile("/path/to/cluster.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(clusterYaml1Actual) != clusterYaml1Expected {
+		t.Errorf("assertion failed: expected=%s, got=%s", clusterYaml1Expected, string(clusterYaml1Actual))
+	}
+
+	upMod, err := man.Up()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := man.lock(upMod); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	lockActual, err := fs.ReadFile("/path/to/variant.lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockExpected := `dependencies:
+  k8s:
+    version: 1.13.7
+`
+	if string(lockActual) != lockExpected {
+		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
+	}
+
+	mod2, err := man.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := man.run(mod2); err != nil {
+		t.Fatal(err)
+	}
+
+	clusterYaml2Expected := `apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: k8s1
+  region: ap-northeast-1
+  version: 1.13.7
+nodeGroups:
+- name: ng1
+  instanceType: m5.xlarge
+  desiredCapacity: 1
+  volumeSize: 100
+  volumeType: gp2
+  volumeEncrypted: true
+`
+	clusterYaml2Actual, err := fs.ReadFile("/path/to/cluster.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(clusterYaml2Actual) != clusterYaml2Expected {
+		t.Errorf("assertion failed: expected=%s, got=%s", clusterYaml2Expected, string(clusterYaml2Actual))
+	}
+
 }

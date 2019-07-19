@@ -1,4 +1,7 @@
 tasks:
+  build:
+    script: |
+      go build
   dev:
     script: |
       go build . && ./mod

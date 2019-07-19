@@ -16,6 +16,14 @@ type VersionsFrom struct {
 	DockerImageTags DockerImageTags `yaml:"dockerImageTags"`
 }
 
+func (f VersionsFrom) IsDefined() bool {
+	return f.Exec.Command != "" ||
+		f.JSONPath.Source != "" ||
+		f.GitTags.Source != "" ||
+		f.GitHubReleases.Source != "" ||
+		f.DockerImageTags.Source != ""
+}
+
 type Exec struct {
 	Command string   `yaml:"command"`
 	Args    []string `yaml:"args"`

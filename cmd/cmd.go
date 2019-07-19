@@ -59,7 +59,7 @@ func Execute() {
 	}
 
 	modup := &cobra.Command{
-		Use:  "up",
+		Use: "up",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			man, err := variantmod.New(variantmod.Logger(log))
 			if err != nil {

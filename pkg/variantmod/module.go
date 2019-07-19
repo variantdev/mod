@@ -20,15 +20,30 @@ type Module struct {
 	ReleaseChannel *releasetracker.Tracker
 	Executable     *execversionmanager.ExecVM
 
-	Dependencies    map[string]*Module
+	Submodules      map[string]*Module
 	ReleaseTrackers map[string]*releasetracker.Tracker
 
-	VersionLock map[string]interface{}
+	VersionLock ModVersionLock
 }
 
-type LockedVersions struct {
-	Modules  Values `yaml:"modules"`
-	Releases Values `yaml:"releases"`
+type ModVersionLock struct {
+	Dependencies map[string]DepVersionLock `yaml:"dependencies"`
+}
+
+type DepVersionLock struct {
+	Version string `yaml:"version"`
+}
+
+func (l ModVersionLock) ToMap() map[string]interface{} {
+	return map[string]interface{}{"Dependencies": l.ToDepsMap()}
+}
+
+func (l ModVersionLock) ToDepsMap() map[string]interface{} {
+	deps := map[string]interface{}{}
+	for k, v := range l.Dependencies {
+		deps[k] = map[string]interface{}{"version": v.Version}
+	}
+	return deps
 }
 
 type File struct {
@@ -44,7 +59,7 @@ func merge(src, dst map[string]struct{}) {
 }
 
 func (m *Module) Walk(f func(*Module) error) error {
-	for _, dep := range m.Dependencies {
+	for _, dep := range m.Submodules {
 		if err := dep.Walk(f); err != nil {
 			return err
 		}

@@ -1,9 +1,11 @@
 package variantmod
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/go-logr/logr"
 	"github.com/twpayne/go-vfs"
+	"github.com/variantdev/mod/pkg/cmdsite"
 	"github.com/variantdev/mod/pkg/depresolver"
 	"github.com/variantdev/mod/pkg/execversionmanager"
 	"github.com/variantdev/mod/pkg/maputil"
@@ -43,6 +45,8 @@ type FileSpec struct {
 }
 
 type DependencySpec struct {
+	ReleasesFrom releasetracker.VersionsFrom `yaml:"releasesFrom""`
+
 	Source string `yaml:"source"`
 	Kind   string `yaml:"kind"`
 	// VersionConstraint is the version range for this dependency. Works only for modules hosted on Git or GitHub
@@ -50,11 +54,12 @@ type DependencySpec struct {
 	Arguments         map[string]interface{} `yaml:"arguments"`
 
 	Alias          string
-	LockedVersions map[string]interface{}
+	LockedVersions ModVersionLock
 }
 
 type ModuleManager struct {
-	fs vfs.FS
+	fs   vfs.FS
+	cmdr cmdsite.RunCommand
 
 	Logger logr.Logger
 
@@ -101,6 +106,19 @@ type fsOption struct {
 
 func (s *fsOption) SetOption(r *ModuleManager) error {
 	r.fs = s.f
+	return nil
+}
+
+func Commander(cmdr cmdsite.RunCommand) Option {
+	return &cmdrOption{cmdr: cmdr}
+}
+
+type cmdrOption struct {
+	cmdr cmdsite.RunCommand
+}
+
+func (s *cmdrOption) SetOption(r *ModuleManager) error {
+	r.cmdr = s.cmdr
 	return nil
 }
 
@@ -206,27 +224,20 @@ func (m *ModuleManager) Load() (*Module, error) {
 		}
 	}
 
-	lockedVers := Values{}
+	lockContents := ModVersionLock{Dependencies: map[string]DepVersionLock{}}
 	if bytes != nil {
 		m.Logger.V(2).Info("load.yaml.unmarshal.begin", "bytes", string(bytes))
-		if err := yaml.Unmarshal(bytes, &lockedVers); err != nil {
+		if err := yaml.Unmarshal(bytes, &lockContents); err != nil {
 			return nil, err
 		}
 
-		m.Logger.V(2).Info("load.yaml.unmarshal.end", "data", lockedVers)
-
-		lockedVers, err = maputil.CastKeysToStrings(map[string]interface{}(lockedVers))
-		if err != nil {
-			return nil, err
-		}
-
-		m.Logger.V(2).Info("load.yaml.castkeys", "data", lockedVers)
+		m.Logger.V(2).Info("load.yaml.unmarshal.end", "data", lockContents)
 	}
 
 	spec := DependencySpec{
 		Source:         filepath.Join(m.AbsWorkDir, "variant.mod"),
 		Arguments:      map[string]interface{}{},
-		LockedVersions: lockedVers,
+		LockedVersions: lockContents,
 	}
 
 	m.Logger.V(2).Info("load.begin", "spec", spec)
@@ -289,9 +300,19 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		return nil, err
 	}
 
-	vals := mergeByOverwrite(Values{}, defaults, depspec.Arguments, depspec.LockedVersions)
+	vals := mergeByOverwrite(Values{}, defaults, depspec.Arguments, depspec.LockedVersions.ToMap())
 
 	trackers := map[string]*releasetracker.Tracker{}
+
+	for n, dep := range spec.Dependencies {
+		if dep.ReleasesFrom.IsDefined() {
+			_, conflicted := spec.Releases[n]
+			if conflicted {
+				return nil, fmt.Errorf("conflicting dependency %q", n)
+			}
+			spec.Releases[n] = releasetracker.Spec{VersionsFrom: dep.ReleasesFrom}
+		}
+	}
 
 	for alias, dep := range spec.Releases {
 		var rc *releasetracker.Tracker
@@ -300,6 +321,7 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 			releasetracker.WD(m.AbsWorkDir),
 			releasetracker.GoGetterWD(m.goGetterAbsWorkDir),
 			releasetracker.FS(m.fs),
+			releasetracker.Commander(m.cmdr),
 		)
 		if err != nil {
 			return nil, err
@@ -328,31 +350,15 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		trackers[alias] = rc
 	}
 
-	var verLock Values
-	if depspec.LockedVersions != nil {
-		verLock = depspec.LockedVersions
-	} else {
-		verLock = Values{}
-	}
+	verLock := depspec.LockedVersions
 
-	//if vals[depspec.Alias] != nil {
-	//	switch t := vals[depspec.Alias].(type) {
-	//	case map[string]interface{}:
-	//		verLock = t
-	//	case Values:
-	//		verLock = map[string]interface{}(t)
-	//	default:
-	//		return nil, fmt.Errorf("unexpected type: value=%v, type=%T", t, t)
-	//	}
-	//}
+	submods := map[string]*Module{}
 
-	moduleDeps := map[string]*Module{}
-
+	// Resolve versions of dependencies
 	for alias, dep := range spec.Dependencies {
-		lock, ok := verLock[alias]
+		_, ok := verLock.Dependencies[alias]
 		if ok {
 			m.Logger.V(2).Info("tracker unused. lock version exists", "alias", alias, "verLock", verLock)
-			vals[alias] = Values{"version": lock}
 		} else {
 			m.Logger.V(2).Info("finding tracker", "alias", alias, "trackers", trackers)
 			tracker, ok := trackers[alias]
@@ -364,26 +370,26 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 				}
 				vals[alias] = Values{"version": rel.Version}
 
-				verLock[alias] = rel.Version
+				verLock.Dependencies[alias] = DepVersionLock{Version: rel.Version}
 			} else {
 				m.Logger.V(2).Info("no tracker found", "alias", alias)
 			}
 		}
+	}
 
+	// Regenerate template parameters from the up-to-date versions of dependencies
+	vals = mergeByOverwrite(Values{}, defaults, depspec.Arguments, verLock.ToDepsMap(), verLock.ToMap())
+
+	// Load sub-modules
+	for alias, dep := range spec.Dependencies {
 		if dep.Kind != "Module" {
 			continue
 		}
 
 		dep.Alias = alias
-		if lock, ok := verLock[alias]; ok {
-			switch t := lock.(type) {
-			case map[string]interface{}:
-				dep.LockedVersions = t
-			case Values:
-				dep.LockedVersions = map[string]interface{}(t)
-			default:
-				return nil, fmt.Errorf("unexpected error: value=%v, type=%T", t, t)
-			}
+
+		if dep.LockedVersions.Dependencies == nil {
+			dep.LockedVersions.Dependencies = map[string]DepVersionLock{}
 		}
 
 		args, err := maputil.CastKeysToStrings(dep.Arguments)
@@ -392,16 +398,18 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		}
 		dep.Arguments, err = tmpl.RenderArgs(args, vals)
 		if err != nil {
+			m.Logger.V(2).Info("renderargs failed with values", "vals", vals)
 			return nil, err
 		}
 		m.Logger.V(2).Info("loading dependency", "alias", alias, "dep", dep)
-		loadedMod, err := m.load(dep)
+		submod, err := m.load(dep)
 		if err != nil {
 			return nil, err
 		}
-		moduleDeps[alias] = loadedMod
+		submods[alias] = submod
 
-		vals[alias] = loadedMod.Values
+		vals = mergeByOverwrite(Values{}, vals, map[string]interface{}{alias: submod.Values})
+		//vals[alias] = submod.Values
 
 		m.Logger.V(1).Info("loaded dependency", "alias", alias, "vals", vals)
 	}
@@ -434,23 +442,23 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		return nil, err
 	}
 
-	if vals[depspec.Alias] != nil {
-		vs, ok := vals[depspec.Alias].(Values)
-		if ok {
-			v, set := vs["version"]
-			if set {
-				vals["version"] = v
-			}
-		}
-	}
-
+	//if vals[depspec.Alias] != nil {
+	//	vs, ok := vals[depspec.Alias].(Values)
+	//	if ok {
+	//		v, set := vs["version"]
+	//		if set {
+	//			vals["version"] = v
+	//		}
+	//	}
+	//}
+	//
 	mod = &Module{
 		Alias:           spec.Name,
 		Values:          vals,
 		ValuesSchema:    schema,
 		Files:           files,
 		Executable:      execset,
-		Dependencies:    moduleDeps,
+		Submodules:      submods,
 		ReleaseTrackers: trackers,
 		VersionLock:     verLock,
 	}
@@ -472,7 +480,7 @@ func (m *ModuleManager) Up() (*Module, error) {
 	spec := DependencySpec{
 		Source:         filepath.Join(m.AbsWorkDir, "variant.mod"),
 		Arguments:      map[string]interface{}{},
-		LockedVersions: Values{},
+		LockedVersions: ModVersionLock{Dependencies: map[string]DepVersionLock{}},
 	}
 
 	mod, err := m.load(spec)
@@ -480,26 +488,19 @@ func (m *ModuleManager) Up() (*Module, error) {
 		return nil, err
 	}
 
-	fmt.Fprintf(os.Stderr, "%+v\n", mod)
+	fmt.Fprintf(os.Stderr, "up: %+v\n", mod)
 	return mod, nil
 }
 
 func (m *ModuleManager) lock(mod *Module) error {
-	vals := Values{}
-	if err := m.breadthFirstWalk(mod, []string{}, &vals, func(path []string, ctx *Values, dep *Module) error {
-		m.Logger.V(2).Info("lock", "path", path, "ctx", ctx, "lock", dep.VersionLock)
-		if dep.VersionLock != nil {
-			maputil.Set(*ctx, path, dep.VersionLock)
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
-
-	bytes, err := yaml.Marshal(vals)
+	buf := &bytes.Buffer{}
+	enc := yaml.NewEncoder(buf)
+	enc.SetIndent(2)
+	err := enc.Encode(mod.VersionLock)
 	if err != nil {
 		return err
 	}
+	bytes := buf.Bytes()
 
 	writeTo := filepath.Join(m.AbsWorkDir, "variant.lock")
 
@@ -509,15 +510,15 @@ func (m *ModuleManager) lock(mod *Module) error {
 }
 
 func (m *ModuleManager) breadthFirstWalk(cur *Module, path []string, vals *Values, f func([]string, *Values, *Module) error) error {
-	if cur.Dependencies != nil {
-		for i := range cur.Dependencies {
-			dep := cur.Dependencies[i]
+	if cur.Submodules != nil {
+		for i := range cur.Submodules {
+			dep := cur.Submodules[i]
 			if err := f(append(append([]string{}, path...), dep.Alias), vals, dep); err != nil {
 				return err
 			}
 		}
-		for i := range cur.Dependencies {
-			dep := cur.Dependencies[i]
+		for i := range cur.Submodules {
+			dep := cur.Submodules[i]
 			if err := m.breadthFirstWalk(dep, append(append([]string{}, path...), dep.Alias), vals, f); err != nil {
 				return err
 			}
@@ -535,13 +536,24 @@ func mergeByOverwrite(src ...Values) (res Values) {
 	}()
 	for _, s := range src {
 		for k, v := range s {
-			switch t := v.(type) {
-			case map[string]interface{}:
-				switch tt := res[k].(type) {
-				case map[string]interface{}:
-					res[k] = mergeByOverwrite(tt, t)
-				default:
-					res[k] = tt
+			klog.V(0).Infof("mergeByOverwrite: k=%v, v=%v(%T)", k, v, v)
+			switch typedV := v.(type) {
+			case map[string]interface{}, Values:
+				_, ok := res[k]
+				if ok {
+					switch typedDestV := res[k].(type) {
+					case map[string]interface{}:
+						klog.V(0).Infof("mergeByOverwrite: map[string]interface{}: %v", typedDestV)
+						res[k] = mergeByOverwrite(typedDestV, typedV.(Values))
+					case Values:
+						klog.V(0).Infof("mergeByOverwrite: Values: %v", typedDestV)
+						res[k] = mergeByOverwrite(typedDestV, typedV.(Values))
+					default:
+						klog.V(0).Infof("mergeByOverwrite: default: %v", typedDestV)
+						res[k] = typedDestV
+					}
+				} else {
+					res[k] = typedV
 				}
 			default:
 				res[k] = v
