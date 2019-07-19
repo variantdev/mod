@@ -37,6 +37,46 @@ func TestProvider_JSONPath(t *testing.T) {
 	}
 }
 
+func TestProvider_Exec(t *testing.T) {
+	input := `releaseChannel:
+  versionsFrom:
+    exec:
+      command: sh
+      args:
+      - -c
+      - cd ../../examples/eks-k8s-vers && go run main.go
+`
+
+	conf := &Config{}
+	if err := yaml.Unmarshal([]byte(input), conf); err != nil {
+		t.Fatal(err)
+	}
+
+	expectedInput := cmdsite.NewInput("sh", []string{"-c", "cd ../../examples/eks-k8s-vers && go run main.go"}, map[string]string{})
+	expectedStdout := `1.13.7
+1.12.6
+1.11.8
+1.10.13
+`
+	cmdr := cmdsite.NewTester(map[cmdsite.CommandInput]cmdsite.CommandOutput{
+		expectedInput: {Stdout: expectedStdout},
+	})
+
+	stable, err := New(conf.ReleaseChannel, Commander(cmdr))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	latest, err := stable.Latest("= 1.13.7")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if latest.Version != "1.13.7" {
+		t.Errorf("unexpected version: expected=%v, got=%v", "1.13.7", latest.Version)
+	}
+}
+
 func TestProvider_GitTags(t *testing.T) {
 	input := `releaseChannel:
   versionsFrom:

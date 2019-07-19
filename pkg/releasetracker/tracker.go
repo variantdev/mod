@@ -168,9 +168,17 @@ type ReleaseProvider interface {
 	All() ([]*Release, error)
 }
 
-func newExecProvider(cmd string, r *Tracker) *execProvider {
+func newExecProvider(cmd string, args []string, r *Tracker) *execProvider {
 	return &execProvider{
-		cmd:     cmd,
+		command: cmd,
+		args:    args,
+		runtime: r,
+	}
+}
+
+func newShellProvider(cmd string, r *Tracker) *shellProvider {
+	return &shellProvider{
+		script:  cmd,
 		runtime: r,
 	}
 }
@@ -206,7 +214,8 @@ func newGitHubReleasesProvider(spec GitHubReleases, r *Tracker) *httpJsonPathPro
 }
 
 type execProvider struct {
-	cmd string
+	command string
+	args    []string
 
 	runtime *Tracker
 }
@@ -214,7 +223,19 @@ type execProvider struct {
 var _ ReleaseProvider = &execProvider{}
 
 func (p *execProvider) All() ([]*Release, error) {
-	return p.runtime.execAll(p.cmd)
+	return p.runtime.releasesFromExec(p.command, p.args)
+}
+
+type shellProvider struct {
+	script string
+
+	runtime *Tracker
+}
+
+var _ ReleaseProvider = &shellProvider{}
+
+func (p *shellProvider) All() ([]*Release, error) {
+	return p.runtime.releasesFromShell(p.script)
 }
 
 type getterJsonPathProvider struct {
@@ -226,7 +247,7 @@ type getterJsonPathProvider struct {
 var _ ReleaseProvider = &getterJsonPathProvider{}
 
 func (p *getterJsonPathProvider) All() ([]*Release, error) {
-	return p.runtime.getterJsonPath(p.spec)
+	return p.runtime.releasesFromGetterJsonPath(p.spec)
 }
 
 type httpJsonPathProvider struct {
@@ -238,11 +259,15 @@ type httpJsonPathProvider struct {
 var _ ReleaseProvider = &httpJsonPathProvider{}
 
 func (p *httpJsonPathProvider) All() ([]*Release, error) {
-	return p.runtime.httpJsonPath(p.url, p.jsonpath)
+	return p.runtime.releasesFromHttpJsonPath(p.url, p.jsonpath)
 }
 
-func (p *Tracker) exec(cmd string) ([]string, error) {
-	stdout, stderr, err := p.cmdSite.CaptureStrings("sh", []string{"-c", cmd})
+func (p *Tracker) execScript(cmd string) ([]string, error) {
+	return p.exec("sh", []string{"-c", cmd})
+}
+
+func (p *Tracker) exec(cmd string, args []string) ([]string, error) {
+	stdout, stderr, err := p.cmdSite.CaptureStrings(cmd, args)
 	if len(stderr) > 0 {
 		p.Logger.V(1).Info(stderr)
 	}
@@ -263,8 +288,8 @@ func (p *Tracker) exec(cmd string) ([]string, error) {
 	return vs, nil
 }
 
-func (p *Tracker) execAll(cmd string) ([]*Release, error) {
-	vs, err := p.exec(cmd)
+func (p *Tracker) releasesFromExec(cmd string, args []string) ([]*Release, error) {
+	vs, err := p.exec(cmd, args)
 	if err != nil {
 		return nil, err
 	}
@@ -272,7 +297,16 @@ func (p *Tracker) execAll(cmd string) ([]*Release, error) {
 	return p.versionsToReleases(vs)
 }
 
-func (p *Tracker) getterJsonPath(spec GetterJSONPath) ([]*Release, error) {
+func (p *Tracker) releasesFromShell(cmd string) ([]*Release, error) {
+	vs, err := p.execScript(cmd)
+	if err != nil {
+		return nil, err
+	}
+
+	return p.versionsToReleases(vs)
+}
+
+func (p *Tracker) releasesFromGetterJsonPath(spec GetterJSONPath) ([]*Release, error) {
 	localCopy, err := p.dep.Resolve(spec.Source)
 	if err != nil {
 		return nil, err
@@ -291,7 +325,7 @@ func (p *Tracker) getterJsonPath(spec GetterJSONPath) ([]*Release, error) {
 	return p.extractVersions(tmp, spec.Versions)
 }
 
-func (p *Tracker) httpJsonPath(url string, jpath string) ([]*Release, error) {
+func (p *Tracker) releasesFromHttpJsonPath(url string, jpath string) ([]*Release, error) {
 	res, err := p.httpGetter.DoRequest(url)
 	if err != nil {
 		return nil, err
@@ -402,11 +436,13 @@ func (p *Tracker) GetProvider() (ReleaseProvider, error) {
 
 	if versionsFrom.JSONPath.Source != "" {
 		return newGetterProvider(versionsFrom.JSONPath, p), nil
+	} else if versionsFrom.Exec.Command != "" {
+		return newExecProvider(versionsFrom.Exec.Command, versionsFrom.Exec.Args, p), nil
 	} else if versionsFrom.DockerImageTags.Source != "" {
 		return newDockerHubImageTagsProvider(versionsFrom.DockerImageTags, p), nil
 	} else if versionsFrom.GitTags.Source != "" {
 		cmd := fmt.Sprintf("git ls-remote --tags git://%s.git | grep -v { | awk '{ print $2 }' | cut -d'/' -f 3", versionsFrom.GitTags.Source)
-		return newExecProvider(cmd, p), nil
+		return newShellProvider(cmd, p), nil
 	} else if versionsFrom.GitHubReleases.Source != "" {
 		return newGitHubReleasesProvider(versionsFrom.GitHubReleases, p), nil
 	}

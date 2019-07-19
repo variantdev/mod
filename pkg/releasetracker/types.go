@@ -9,10 +9,16 @@ type Spec struct {
 }
 
 type VersionsFrom struct {
+	Exec            Exec            `yaml:"exec"`
 	JSONPath        GetterJSONPath  `yaml:"jsonPath"`
 	GitTags         GitTags         `yaml:"gitTags"`
 	GitHubReleases  GitHubReleases  `yaml:"githubReleases"`
 	DockerImageTags DockerImageTags `yaml:"dockerImageTags"`
+}
+
+type Exec struct {
+	Command string   `yaml:"command"`
+	Args    []string `yaml:"args"`
 }
 
 type GetterJSONPath struct {
