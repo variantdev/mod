@@ -123,3 +123,18 @@ $ diff --unified cluster.yaml{.bak,}
    instanceType: m5.xlarge
    desiredCapacity: 1
 ```
+
+Finally run `eksctl update` to actually update the cluster with the new K8s version:
+
+```console
+$ eksctl update -f cluster.yaml
+```
+
+Or defer it to your GitOps pipeline by git-commit/pushing it to your GitOps repo:
+
+```console
+$ git add variant.lock cluster.yaml
+$ git commit -m 'Update K8s'
+$ git push origin update-k8s
+$ hub pull-request
+```
