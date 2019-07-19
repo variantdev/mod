@@ -21,11 +21,13 @@ nodeGroups:
   desiredCapacity: 1
 ```
 
-Updating the K8s version used by this cluster requires the following steps:
+However, updating the K8s version used by this cluster requires the following steps:
 
 - Get the available versions of K8s on EKS and decide the target version
 - Change `version: 1.12.6` to e.g. `version: 1.13.7`
 - Run `eksctl update`
+
+Repeating these steps gets cumbersome when you have many clusters.
 
 `mod` allows you to automate the first 2 steps.
 
