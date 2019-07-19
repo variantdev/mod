@@ -15,4 +15,4 @@ dependencies:
         args:
         - run
         - main.go
-    version: > 1.10
+    version: "> 1.10"

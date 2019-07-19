@@ -65,17 +65,25 @@ func Execute() {
 			if err != nil {
 				return err
 			}
-			_, err = man.Up()
+			return man.Up()
+		},
+	}
+
+	modprovision := &cobra.Command{
+		Use: "provision",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			man, err := variantmod.New(variantmod.Logger(log))
 			if err != nil {
 				return err
 			}
-			return nil
+			return man.Run()
 		},
 	}
 
 	cmd.AddCommand(modexec)
 	cmd.AddCommand(modlistdepver)
 	cmd.AddCommand(modup)
+	cmd.AddCommand(modprovision)
 
 	cmd.SilenceErrors = true
 

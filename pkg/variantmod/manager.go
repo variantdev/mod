@@ -475,7 +475,16 @@ func (m *ModuleManager) Run() error {
 	return m.run(mod)
 }
 
-func (m *ModuleManager) Up() (*Module, error) {
+func (m *ModuleManager) Up() error {
+	mod, err := m.up()
+	if err != nil {
+		return err
+	}
+
+	return m.lock(mod)
+}
+
+func (m *ModuleManager) up() (*Module, error) {
 	m.Logger.V(2).Info("running up")
 	spec := DependencySpec{
 		Source:         filepath.Join(m.AbsWorkDir, "variant.mod"),

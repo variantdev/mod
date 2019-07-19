@@ -59,6 +59,10 @@ func New(conf Spec, opts ...Option) (*Tracker, error) {
 		}
 	}
 
+	if provider.cmdSite.RunCmd == nil {
+		provider.cmdSite.RunCmd = cmdsite.DefaultRunCommand
+	}
+
 	if provider.Logger == nil {
 		provider.Logger = klogr.New()
 	}

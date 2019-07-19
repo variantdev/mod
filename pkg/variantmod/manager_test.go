@@ -449,7 +449,7 @@ dependencies:
 		t.Errorf("unexpected go version output: expected=\"%s\", got=\"%s\"", expected, actual)
 	}
 
-	upMod, err := man.Up()
+	upMod, err := man.up()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -571,7 +571,7 @@ nodeGroups:
 		t.Errorf("assertion failed: expected=%s, got=%s", clusterYaml1Expected, string(clusterYaml1Actual))
 	}
 
-	upMod, err := man.Up()
+	upMod, err := man.up()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
