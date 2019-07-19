@@ -1,0 +1,3 @@
+dependencies:
+  k8s:
+    version: 1.13.7

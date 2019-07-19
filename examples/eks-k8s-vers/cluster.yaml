@@ -1,0 +1,13 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: k8s1
+  region: ap-northeast-1
+  version: 1.13.7
+nodeGroups:
+- name: ng1
+  instanceType: m5.xlarge
+  desiredCapacity: 1
+  volumeSize: 100
+  volumeType: gp2
+  volumeEncrypted: true
