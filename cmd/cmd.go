@@ -19,7 +19,20 @@ func Execute() {
 			if err != nil {
 				return err
 			}
-			return mod.Run()
+			_, err = mod.Build()
+			return err
+		},
+	}
+
+	modbuild := &cobra.Command{
+		Use: "build",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			mod, err := variantmod.New(variantmod.Logger(log))
+			if err != nil {
+				return err
+			}
+			_, err = mod.Build()
+			return err
 		},
 	}
 
@@ -58,6 +71,9 @@ func Execute() {
 		},
 	}
 
+	var repo, branch string
+	var build bool
+	var push bool
 	modup := &cobra.Command{
 		Use: "up",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -65,9 +81,29 @@ func Execute() {
 			if err != nil {
 				return err
 			}
-			return man.Up()
+			if err := man.Up(); err != nil {
+				return err
+			}
+			files := []string{"variant.mod"}
+			if build {
+				r, err := man.Build()
+				if err != nil {
+					return err
+				}
+				files = r.Files
+			}
+			if push {
+				if err := man.Push(files, repo, branch); err != nil {
+					return err
+				}
+			}
+			return nil
 		},
 	}
+	modup.Flags().BoolVar(&build, "build", false, "Run `build` after update")
+	modup.Flags().BoolVar(&push, "push", false, "Push to Git repository after update (and `build` if --build provided)")
+	modup.Flags().StringVar(&repo, "repo", "", "Git repository to which the provisioned files are pushed")
+	modup.Flags().StringVar(&branch, "branch", "master", "Git branch to which the provisioned files are pushed")
 
 	modprovision := &cobra.Command{
 		Use: "provision",
@@ -76,10 +112,12 @@ func Execute() {
 			if err != nil {
 				return err
 			}
-			return man.Run()
+			_, err = man.Build()
+			return err
 		},
 	}
 
+	cmd.AddCommand(modbuild)
 	cmd.AddCommand(modexec)
 	cmd.AddCommand(modlistdepver)
 	cmd.AddCommand(modup)

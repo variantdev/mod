@@ -61,7 +61,7 @@ func TestModule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := man.run(mod); err != nil {
+	if _, err := man.doBuild(mod); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -100,7 +100,7 @@ provisioners:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := man.Run(); err != nil {
+	if _, err := man.Build(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -220,7 +220,7 @@ provisioners:
 		t.Fatal(err)
 	}
 
-	if err := man.run(mod); err != nil {
+	if _, err := man.doBuild(mod); err != nil {
 		t.Fatal(err)
 	}
 
@@ -400,7 +400,7 @@ dependencies:
 		t.Fatal(err)
 	}
 
-	if err := man.run(mod); err != nil {
+	if _, err := man.doBuild(mod); err != nil {
 		t.Fatal(err)
 	}
 
@@ -449,7 +449,7 @@ dependencies:
 		t.Errorf("unexpected go version output: expected=\"%s\", got=\"%s\"", expected, actual)
 	}
 
-	upMod, err := man.up()
+	upMod, err := man.doUp()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -545,7 +545,7 @@ dependencies:
 		t.Fatal(err)
 	}
 
-	if err := man.run(mod); err != nil {
+	if _, err := man.doBuild(mod); err != nil {
 		t.Fatal(err)
 	}
 
@@ -571,7 +571,7 @@ nodeGroups:
 		t.Errorf("assertion failed: expected=%s, got=%s", clusterYaml1Expected, string(clusterYaml1Actual))
 	}
 
-	upMod, err := man.up()
+	upMod, err := man.doUp()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -597,7 +597,7 @@ nodeGroups:
 		t.Fatal(err)
 	}
 
-	if err := man.run(mod2); err != nil {
+	if _, err := man.doBuild(mod2); err != nil {
 		t.Fatal(err)
 	}
 

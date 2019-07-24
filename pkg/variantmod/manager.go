@@ -8,6 +8,7 @@ import (
 	"github.com/variantdev/mod/pkg/cmdsite"
 	"github.com/variantdev/mod/pkg/depresolver"
 	"github.com/variantdev/mod/pkg/execversionmanager"
+	"github.com/variantdev/mod/pkg/gitops"
 	"github.com/variantdev/mod/pkg/maputil"
 	"github.com/variantdev/mod/pkg/releasetracker"
 	"github.com/variantdev/mod/pkg/tmpl"
@@ -466,17 +467,21 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 	return mod, nil
 }
 
-func (m *ModuleManager) Run() error {
+type BuildResult struct {
+	Files []string
+}
+
+func (m *ModuleManager) Build() (*BuildResult, error) {
 	mod, err := m.Load()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return m.run(mod)
+	return m.doBuild(mod)
 }
 
 func (m *ModuleManager) Up() error {
-	mod, err := m.up()
+	mod, err := m.doUp()
 	if err != nil {
 		return err
 	}
@@ -484,7 +489,27 @@ func (m *ModuleManager) Up() error {
 	return m.lock(mod)
 }
 
-func (m *ModuleManager) up() (*Module, error) {
+func (m *ModuleManager) Push(files []string, repo, branch string) error {
+	g := gitops.New(
+		gitops.WD(m.AbsWorkDir),
+		gitops.Commander(m.cmdr),
+	)
+	if err := g.Checkout(branch); err != nil {
+		return err
+	}
+	if g.DiffExists() {
+		if err := g.Add(files...); err != nil {
+			return err
+		}
+		if err := g.Commit("Automated update"); err != nil {
+			return err
+		}
+		return g.Push(branch)
+	}
+	return nil
+}
+
+func (m *ModuleManager) doUp() (*Module, error) {
 	m.Logger.V(2).Info("running up")
 	spec := DependencySpec{
 		Source:         filepath.Join(m.AbsWorkDir, "variant.mod"),
@@ -572,25 +597,41 @@ func mergeByOverwrite(src ...Values) (res Values) {
 	return res
 }
 
-func (m *ModuleManager) run(mod *Module) error {
-	return mod.Walk(func(dep *Module) error {
-		return m.runSingle(dep)
+func (m *ModuleManager) doBuild(mod *Module) (*BuildResult, error) {
+	r := BuildResult{}
+	err := mod.Walk(func(dep *Module) error {
+		rr, err := m.doBuildSingle(dep)
+		if err != nil {
+			return err
+		}
+
+		r.Files = append(r.Files, rr.Files...)
+
+		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
 }
 
-func (m *ModuleManager) runSingle(mod *Module) (err error) {
+func (m *ModuleManager) doBuildSingle(mod *Module) (r *BuildResult, err error) {
 	defer func() {
 		if err != nil {
-			m.Logger.V(0).Info("run", "error", err.Error())
+			m.Logger.V(0).Info("doBuild", "error", err.Error())
 		}
 	}()
+
+	r = &BuildResult{
+		Files: []string{},
+	}
 
 	schemaLoader := gojsonschema.NewGoLoader(mod.ValuesSchema)
 	values := mergeByOverwrite(Values{}, mod.Values)
 	jsonLoader := gojsonschema.NewGoLoader(values)
 	result, err := gojsonschema.Validate(schemaLoader, jsonLoader)
 	if err != nil {
-		return fmt.Errorf("validate: %v", err)
+		return nil, fmt.Errorf("validate: %v", err)
 	}
 	for i, err := range result.Errors() {
 		m.Logger.V(1).Info("err", "index", i, "err", err.String())
@@ -600,13 +641,13 @@ func (m *ModuleManager) runSingle(mod *Module) (err error) {
 		u, err := tmpl.Render("source", f.Source, values)
 		if err != nil {
 			m.Logger.V(1).Info(err.Error())
-			return err
+			return nil, err
 		}
 
 		yours, err := m.dep.Resolve(u)
 		if err != nil {
 			m.Logger.V(1).Info(err.Error())
-			return err
+			return nil, err
 		}
 
 		var target string
@@ -618,7 +659,7 @@ func (m *ModuleManager) runSingle(mod *Module) (err error) {
 			contents, err = m.fs.ReadFile(yours)
 			if err != nil {
 				m.Logger.V(1).Info(err.Error())
-				return err
+				return nil, err
 			}
 			target = yours
 		} else {
@@ -630,21 +671,23 @@ func (m *ModuleManager) runSingle(mod *Module) (err error) {
 			args, err := tmpl.RenderArgs(f.Arguments, values)
 			if err != nil {
 				m.Logger.V(1).Info(err.Error())
-				return err
+				return nil, err
 			}
 			res, err := tmpl.Render("source file", string(contents), args)
 			if err != nil {
 				m.Logger.V(1).Info(err.Error())
-				return err
+				return nil, err
 			}
 			contents = []byte(res)
 		}
 
 		if err := m.fs.WriteFile(filepath.Join(m.AbsWorkDir, f.Path), contents, 0644); err != nil {
 			m.Logger.V(1).Info(err.Error())
-			return err
+			return nil, err
 		}
+
+		r.Files = append(r.Files, f.Path)
 	}
 
-	return nil
+	return r, nil
 }
