@@ -1,4 +1,4 @@
-# Example: eks-k8s-vers
+# Example: Automated updates of container image tags in Dockerfile and CI config file
 
 This example demonstrates a basic usage of `mod` to stream-line container image version updates for Dockerfile and CI config files.
 
