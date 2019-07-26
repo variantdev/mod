@@ -2,8 +2,10 @@ package variantmod
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"github.com/go-logr/logr"
+	"github.com/google/go-github/v27/github"
 	"github.com/twpayne/go-vfs"
 	"github.com/variantdev/mod/pkg/cmdsite"
 	"github.com/variantdev/mod/pkg/depresolver"
@@ -13,6 +15,7 @@ import (
 	"github.com/variantdev/mod/pkg/releasetracker"
 	"github.com/variantdev/mod/pkg/tmpl"
 	"github.com/xeipuuv/gojsonschema"
+	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v3"
 	"k8s.io/klog"
 	"k8s.io/klog/klogr"
@@ -489,7 +492,7 @@ func (m *ModuleManager) Up() error {
 	return m.lock(mod)
 }
 
-func (m *ModuleManager) Push(files []string, repo, branch string) error {
+func (m *ModuleManager) Push(files []string, branch string) error {
 	g := gitops.New(
 		gitops.WD(m.AbsWorkDir),
 		gitops.Commander(m.cmdr),
@@ -506,6 +509,52 @@ func (m *ModuleManager) Push(files []string, repo, branch string) error {
 		}
 		return g.Push(branch)
 	}
+	return nil
+}
+
+func (m *ModuleManager) PullRequest(title, base, head string) error {
+	ctx := context.Background()
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: os.Getenv("GITHUB_TOKEN")},
+	)
+	tc := oauth2.NewClient(ctx, ts)
+
+	gc := github.NewClient(tc)
+
+	body := ``
+	newPr := github.NewPullRequest{
+		Title: &title,
+		Head:  &head,
+		Base:  &base,
+		Body:  &body,
+	}
+
+	g := gitops.New(
+		gitops.WD(m.AbsWorkDir),
+		gitops.Commander(m.cmdr),
+	)
+	push, err := g.GetPushURL("origin")
+	if err != nil {
+		return err
+	}
+
+	p := strings.TrimSuffix(push, ".git")
+	p = strings.TrimPrefix(p, "git@github.com:")
+	ownerRepo := strings.Split(p, "/")
+	if len(ownerRepo) != 2 {
+		return fmt.Errorf("unexpected format of remote: %s", push)
+	}
+	owner := ownerRepo[0]
+	repo := ownerRepo[1]
+
+	pr, res, err := gc.PullRequests.Create(ctx, owner, repo, &newPr)
+	if err != nil {
+		klog.V(1).Infof("create pull request: %v", res)
+		return fmt.Errorf("create pull request: %v", err)
+	}
+
+	klog.V(2).Infof("pull request created: %+v", pr)
+
 	return nil
 }
 

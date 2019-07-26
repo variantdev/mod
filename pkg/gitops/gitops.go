@@ -50,6 +50,14 @@ func (c *Client) Commit(msg string) error {
 	return c.git("commit", []string{"-m", msg})
 }
 
+func (c *Client) GetPushURL(name string) (string, error) {
+	stdout, _, err := c.sh.CaptureStrings(c.gitPath, []string{"remote", "get-url", "--push", name})
+	if err != nil {
+		return "", err
+	}
+	return stdout, nil
+}
+
 func (c *Client) Push(branch string) error {
 	return c.git("push", []string{branch})
 }
