@@ -73,43 +73,47 @@ func Execute() {
 		},
 	}
 
+	up := func(branch, title, base string, build, push, pr bool) error {
+		man, err := variantmod.New(variantmod.Logger(log))
+		if err != nil {
+			return err
+		}
+		if err := man.Up(); err != nil {
+			return err
+		}
+		files := []string{"variant.mod"}
+		if build {
+			r, err := man.Build()
+			if err != nil {
+				return err
+			}
+			files = r.Files
+		}
+		if pr {
+			push = true
+		}
+		ts := time.Now().Format("20060102150405")
+		branch = fmt.Sprintf("%s-%s", branch, ts)
+		if push {
+			if err := man.Push(files, branch); err != nil {
+				return err
+			}
+		}
+		if pr {
+			if err := man.PullRequest(title, base, branch); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	{
 		var repo, branch, base, title string
 		var build, push, pr bool
 		modup := &cobra.Command{
 			Use: "up",
 			RunE: func(cmd *cobra.Command, args []string) error {
-				man, err := variantmod.New(variantmod.Logger(log))
-				if err != nil {
-					return err
-				}
-				if err := man.Up(); err != nil {
-					return err
-				}
-				files := []string{"variant.mod"}
-				if build {
-					r, err := man.Build()
-					if err != nil {
-						return err
-					}
-					files = r.Files
-				}
-				if pr {
-					push = true
-				}
-				ts := time.Now().Format("20060102150405")
-				branch = fmt.Sprintf("%s-%s", branch, ts)
-				if push {
-					if err := man.Push(files, branch); err != nil {
-						return err
-					}
-				}
-				if pr {
-					if err := man.PullRequest(title, base, branch); err != nil {
-						return err
-					}
-				}
-				return nil
+				return up(branch, title, base, build, push, pr)
 			},
 		}
 		modup.Flags().BoolVar(&build, "build", false, "Run `build` after update")
@@ -120,6 +124,37 @@ func Execute() {
 		modup.Flags().BoolVar(&pr, "pull-request", false, "Send a pull request after push. Implies --push")
 		modup.Flags().StringVar(&title, "title", "Update dependencies", "Title of the pull-request to be sent")
 		cmd.AddCommand(modup)
+	}
+
+	{
+		var branch, base, title string
+		var build, push, pr, public bool
+		modcreate := &cobra.Command{
+			Use:  "create TEMPLATE_REPO NEW_REPO",
+			Args: cobra.ExactArgs(2),
+			RunE: func(cmd *cobra.Command, args []string) error {
+				templateRepo := args[0]
+				newRepo := args[1]
+				man, err := variantmod.New(variantmod.Logger(log))
+				if err != nil {
+					return err
+				}
+
+				if err := man.Create(templateRepo, newRepo, public); err != nil {
+					return err
+				}
+
+				return up(branch, title, base, build, push, pr)
+			},
+		}
+		modcreate.Flags().BoolVar(&build, "build", true, "Run `build` after update")
+		modcreate.Flags().BoolVar(&push, "push", true, "Push to Git repository after update (and `build` if --build provided)")
+		modcreate.Flags().StringVar(&branch, "branch", "mod-init", "Prefix of git branch name to which the provisioned files are pushed")
+		modcreate.Flags().StringVar(&base, "base", "master", "Branch to which pull request is sent to")
+		modcreate.Flags().BoolVar(&pr, "pull-request", false, "Send a pull request after push. Implies --push")
+		modcreate.Flags().BoolVar(&public, "public", false, "Make the repository public")
+		modcreate.Flags().StringVar(&title, "title", "Initialize repository", "Title of the pull-request to be sent")
+		cmd.AddCommand(modcreate)
 	}
 
 	modprovision := &cobra.Command{

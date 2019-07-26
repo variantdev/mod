@@ -558,6 +558,65 @@ func (m *ModuleManager) PullRequest(title, base, head string) error {
 	return nil
 }
 
+func (m *ModuleManager) Create(templateRepo, newRepo string, public bool) error {
+	ctx := context.Background()
+	ts := oauth2.StaticTokenSource(
+		&oauth2.Token{AccessToken: os.Getenv("GITHUB_TOKEN")},
+	)
+	tc := oauth2.NewClient(ctx, ts)
+
+	gc := github.NewClient(tc)
+
+	g := gitops.New(
+		gitops.WD(m.AbsWorkDir),
+		gitops.Commander(m.cmdr),
+	)
+
+	t := strings.TrimSuffix(templateRepo, ".git")
+	t = strings.TrimPrefix(t, "git@github.com:")
+	ownerRepo := strings.Split(t, "/")
+	if len(ownerRepo) != 2 {
+		return fmt.Errorf("unexpected format of template repo: %s", templateRepo)
+	}
+	tOwner := ownerRepo[0]
+	tRepo := ownerRepo[1]
+
+	n := strings.TrimSuffix(newRepo, ".git")
+	n = strings.TrimPrefix(n, "git@github.com:")
+	nOwnerRepo := strings.Split(n, "/")
+	if len(nOwnerRepo) != 2 {
+		return fmt.Errorf("unexpected format of template repo: %s", templateRepo)
+	}
+	nOwner := nOwnerRepo[0]
+	nRepo := nOwnerRepo[1]
+
+	private := !public
+
+	req := github.TemplateRepoRequest{
+		Name: &nRepo,
+		Owner: &nOwner,
+		Private: &private,
+	}
+
+	createdRepo, res, err := gc.Repositories.CreateFromTemplate(ctx, tOwner, tRepo, &req)
+	if err != nil {
+		klog.V(1).Infof("create repository from template: %v", res)
+		return fmt.Errorf("create repository from template: %v", err)
+	}
+
+	klog.V(2).Infof("repository created: %+v", createdRepo)
+
+	if err := g.Clone("git@github.com:" + newRepo); err != nil {
+		return err
+	}
+
+	if err := os.Chdir(nRepo); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (m *ModuleManager) doUp() (*Module, error) {
 	m.Logger.V(2).Info("running up")
 	spec := DependencySpec{
