@@ -12,3 +12,4 @@ See examples to get started:
   - Configure your CI to run `mod up --build --pull-request --title "Initialize this repository"` in response to "repository created" webhook and submit a PR for initialization
 - Create and initialize repository from a [GitHub Repository Template](https://help.github.com/en/articles/creating-a-repository-from-a-template)
   - Run `mod create myorg/mytemplate-repo myorg/mynew-repo --build --pull-request`
+- Automatically update container image tags in git-managed CRDs (See [flux#1194](https://github.com/fluxcd/flux/issues/1194) for the motivation
