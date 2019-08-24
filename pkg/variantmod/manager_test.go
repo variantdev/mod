@@ -462,7 +462,9 @@ dependencies:
 	if err != nil {
 		t.Fatal(err)
 	}
-	lockExpected := `dependencies: {}
+	lockExpected := `dependencies:
+  coreos:
+    version: 2079.5.0
 `
 	if string(lockActual) != lockExpected {
 		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
@@ -485,6 +487,8 @@ provisioners:
         name: k8s1
         region: ap-northeast-1
         version: "{{.Dependencies.k8s.version}}"
+        prev: |
+          {{if hasKey .Dependencies.k8s "previousVersion"}}{{.Dependencies.k8s.previousVersion}}{{end}}
 
 dependencies:
   k8s:
@@ -502,6 +506,9 @@ metadata:
   name: {{.name}}
   region: {{.region}}
   version: {{.version}}
+{{ $prev := trimSpace .prev -}}
+{{ if ne $prev ""}}  prev: {{$prev}}
+{{ end -}}
 nodeGroups:
 - name: ng1
   instanceType: m5.xlarge
@@ -587,6 +594,7 @@ nodeGroups:
 	lockExpected := `dependencies:
   k8s:
     version: 1.13.7
+    previousVersion: 1.10.13
 `
 	if string(lockActual) != lockExpected {
 		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
@@ -607,6 +615,7 @@ metadata:
   name: k8s1
   region: ap-northeast-1
   version: 1.13.7
+  prev: 1.10.13
 nodeGroups:
 - name: ng1
   instanceType: m5.xlarge

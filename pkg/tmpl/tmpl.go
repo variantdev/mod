@@ -3,11 +3,25 @@ package tmpl
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"text/template"
 )
 
 func Render(name, text string, data interface{}) (string, error) {
-	funcs := map[string]interface{}{}
+	funcs := map[string]interface{}{
+		"hasKey": func(m interface{}, key string) (bool, error) {
+			switch m := m.(type) {
+			case map[string]interface{}:
+				_, ok := m[key]
+				return ok, nil
+			default:
+				return false, fmt.Errorf("map[string]interface expected, but got: value=%v, type=%T", m, m)
+			}
+		},
+		"trimSpace": func(s string) string {
+			return strings.TrimSpace(s)
+		},
+	}
 	tpl := template.New(name).Option("missingkey=error").Funcs(funcs)
 	tpl, err := tpl.Parse(text)
 	if err != nil {

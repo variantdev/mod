@@ -59,6 +59,8 @@ type DependencySpec struct {
 
 	Alias          string
 	LockedVersions ModVersionLock
+
+	ForceUpdate bool
 }
 
 type ModuleManager struct {
@@ -219,7 +221,7 @@ func New(opts ...Option) (*ModuleManager, error) {
 	return mod, nil
 }
 
-func (m *ModuleManager) Load() (*Module, error) {
+func (m *ModuleManager) LoadLockFile() (*ModVersionLock, error) {
 	bytes, err := m.fs.ReadFile(filepath.Join(m.AbsWorkDir, "variant.lock"))
 	if err != nil {
 		m.Logger.V(2).Info("load.readfile", "err", err.Error())
@@ -238,10 +240,19 @@ func (m *ModuleManager) Load() (*Module, error) {
 		m.Logger.V(2).Info("load.yaml.unmarshal.end", "data", lockContents)
 	}
 
+	return &lockContents, nil
+}
+
+func (m *ModuleManager) Load() (*Module, error) {
+	lockContents, err := m.LoadLockFile()
+	if err != nil {
+		return nil, err
+	}
+
 	spec := DependencySpec{
 		Source:         filepath.Join(m.AbsWorkDir, "variant.mod"),
 		Arguments:      map[string]interface{}{},
-		LockedVersions: lockContents,
+		LockedVersions: *lockContents,
 	}
 
 	m.Logger.V(2).Info("load.begin", "spec", spec)
@@ -362,7 +373,28 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 	for alias, dep := range spec.Dependencies {
 		_, ok := verLock.Dependencies[alias]
 		if ok {
-			m.Logger.V(2).Info("tracker unused. lock version exists", "alias", alias, "verLock", verLock)
+			if depspec.ForceUpdate {
+				m.Logger.V(2).Info("finding tracker", "alias", alias, "trackers", trackers)
+				tracker, ok := trackers[alias]
+				if ok {
+					m.Logger.V(2).Info("tracker found", "alias", alias)
+					rel, err := tracker.Latest(dep.VersionConstraint)
+					if err != nil {
+						return nil, err
+					}
+					prev := verLock.Dependencies[alias].Version
+					vals[alias] = Values{"version": rel.Version, "previousVersion": prev}
+
+					verLock.Dependencies[alias] = DepVersionLock{
+						Version: rel.Version,
+						PreviousVersion: prev,
+					}
+				} else {
+					m.Logger.V(2).Info("no tracker found", "alias", alias)
+				}
+			} else {
+				m.Logger.V(2).Info("tracker unused. lock version exists", "alias", alias, "verLock", verLock)
+			}
 		} else {
 			m.Logger.V(2).Info("finding tracker", "alias", alias, "trackers", trackers)
 			tracker, ok := trackers[alias]
@@ -593,8 +625,8 @@ func (m *ModuleManager) Create(templateRepo, newRepo string, public bool) error 
 	private := !public
 
 	req := github.TemplateRepoRequest{
-		Name: &nRepo,
-		Owner: &nOwner,
+		Name:    &nRepo,
+		Owner:   &nOwner,
 		Private: &private,
 	}
 
@@ -618,11 +650,18 @@ func (m *ModuleManager) Create(templateRepo, newRepo string, public bool) error 
 }
 
 func (m *ModuleManager) doUp() (*Module, error) {
+	lockContents, err := m.LoadLockFile()
+	if err != nil {
+		return nil, err
+	}
+
 	m.Logger.V(2).Info("running up")
 	spec := DependencySpec{
-		Source:         filepath.Join(m.AbsWorkDir, "variant.mod"),
-		Arguments:      map[string]interface{}{},
-		LockedVersions: ModVersionLock{Dependencies: map[string]DepVersionLock{}},
+		Source:    filepath.Join(m.AbsWorkDir, "variant.mod"),
+		Arguments: map[string]interface{}{},
+		//LockedVersions: ModVersionLock{Dependencies: map[string]DepVersionLock{}},
+		LockedVersions: *lockContents,
+		ForceUpdate:    true,
 	}
 
 	mod, err := m.load(spec)

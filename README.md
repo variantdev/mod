@@ -13,3 +13,10 @@ See examples to get started:
 - Create and initialize repository from a [GitHub Repository Template](https://help.github.com/en/articles/creating-a-repository-from-a-template)
   - Run `mod create myorg/mytemplate-repo myorg/mynew-repo --build --pull-request`
 - Automatically update container image tags in git-managed CRDs (See [flux#1194](https://github.com/fluxcd/flux/issues/1194) for the motivation
+
+## Templates
+
+The following template functions are available for use within template provisioners:
+
+- `{{ hasKey .Foo.Bar "mykey" }}` returns `true` if `.Foo.Bar` is a `map[string]interface{}` and the value for the key `mykey` is set.
+- `{{ trimSpace .Str }}` removes spaces, tabs, and new-lines from `.Str`
