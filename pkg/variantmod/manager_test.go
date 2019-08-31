@@ -633,3 +633,158 @@ nodeGroups:
 	}
 
 }
+
+func TestDependencyLockinge_EksK8s_TextReplace(t *testing.T) {
+	if testing.Verbose() {
+	}
+
+	files := map[string]interface{}{
+		"/path/to/variant.mod": `
+name: myapp
+
+provisioners:
+  textReplace:
+    cluster.yaml:
+      from: |
+        {{if hasKey .Dependencies.k8s "previousVersion"}}{{.Dependencies.k8s.previousVersion}}{{end}}
+      to: "{{.Dependencies.k8s.version}}"
+
+dependencies:
+  k8s:
+    releasesFrom:
+      exec:
+        command: go
+        args:
+        - run
+        - main.go
+    version: "> 1.10"
+`,
+		"/path/to/cluster.yaml": `apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: k8s1
+  region: ap-northeast-1
+  version: 1.10.13
+nodeGroups:
+- name: ng1
+  instanceType: m5.xlarge
+  desiredCapacity: 1
+  volumeSize: 100
+  volumeType: gp2
+  volumeEncrypted: true
+`,
+		"/path/to/variant.lock": `
+dependencies:
+  k8s:
+    version: "1.10.13"
+`,
+	}
+	fs, clean, err := vfst.NewTestFS(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clean()
+	log := klogr.New()
+	klog.SetOutput(os.Stderr)
+	klog.V(2).Info(fmt.Sprintf("temp dir: %v", fs.TempDir()))
+
+	expectedInput := cmdsite.NewInput("go", []string{"run", "main.go"}, map[string]string{})
+	expectedStdout := `1.13.7
+1.12.6
+1.11.8
+1.10.13
+`
+	cmdr := cmdsite.NewTester(map[cmdsite.CommandInput]cmdsite.CommandOutput{
+		expectedInput: {Stdout: expectedStdout},
+	})
+
+	man, err := New(Logger(log), FS(fs), WD("/path/to"), GoGetterWD(filepath.Join(fs.TempDir(), "path", "to")), Commander(cmdr))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mod, err := man.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := man.doBuild(mod); err != nil {
+		t.Fatal(err)
+	}
+
+	clusterYaml1Expected := `apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: k8s1
+  region: ap-northeast-1
+  version: 1.10.13
+nodeGroups:
+- name: ng1
+  instanceType: m5.xlarge
+  desiredCapacity: 1
+  volumeSize: 100
+  volumeType: gp2
+  volumeEncrypted: true
+`
+	clusterYaml1Actual, err := fs.ReadFile("/path/to/cluster.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(clusterYaml1Actual) != clusterYaml1Expected {
+		t.Errorf("assertion failed: expected=%s, got=%s", clusterYaml1Expected, string(clusterYaml1Actual))
+	}
+
+	upMod, err := man.doUp()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := man.lock(upMod); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	lockActual, err := fs.ReadFile("/path/to/variant.lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockExpected := `dependencies:
+  k8s:
+    version: 1.13.7
+    previousVersion: 1.10.13
+`
+	if string(lockActual) != lockExpected {
+		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
+	}
+
+	mod2, err := man.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := man.doBuild(mod2); err != nil {
+		t.Fatal(err)
+	}
+
+	clusterYaml2Expected := `apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: k8s1
+  region: ap-northeast-1
+  version: 1.13.7
+nodeGroups:
+- name: ng1
+  instanceType: m5.xlarge
+  desiredCapacity: 1
+  volumeSize: 100
+  volumeType: gp2
+  volumeEncrypted: true
+`
+	clusterYaml2Actual, err := fs.ReadFile("/path/to/cluster.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(clusterYaml2Actual) != clusterYaml2Expected {
+		t.Errorf("assertion failed: expected=%s, got=%s", clusterYaml2Expected, string(clusterYaml2Actual))
+	}
+
+}

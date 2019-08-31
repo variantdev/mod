@@ -16,6 +16,7 @@ type Module struct {
 	Values       Values
 	ValuesSchema Values
 	Files        []File
+	TextReplaces []TextReplace
 
 	ReleaseChannel *releasetracker.Tracker
 	Executable     *execversionmanager.ExecVM
@@ -55,6 +56,11 @@ type File struct {
 	Path      string
 	Source    string
 	Arguments map[string]interface{}
+}
+
+type TextReplace struct {
+	Path     string
+	From, To string
 }
 
 func merge(src, dst map[string]struct{}) {

@@ -39,13 +39,19 @@ type ParametersSpec struct {
 }
 
 type ProvisionersSpec struct {
-	Files       map[string]FileSpec       `yaml:"files"`
-	Executables execversionmanager.Config `yaml:",inline"`
+	Files       map[string]FileSpec        `yaml:"files"`
+	Executables execversionmanager.Config  `yaml:",inline"`
+	TextReplace map[string]TextReplaceSpec `yaml:"textReplace"`
 }
 
 type FileSpec struct {
 	Source    string                 `yaml:"source"`
 	Arguments map[string]interface{} `yaml:"arguments"`
+}
+
+type TextReplaceSpec struct {
+	From string `yaml:"from"`
+	To   string `yaml:"to"`
 }
 
 type DependencySpec struct {
@@ -386,7 +392,7 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 					vals[alias] = Values{"version": rel.Version, "previousVersion": prev}
 
 					verLock.Dependencies[alias] = DepVersionLock{
-						Version: rel.Version,
+						Version:         rel.Version,
 						PreviousVersion: prev,
 					}
 				} else {
@@ -460,6 +466,16 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		files = append(files, f)
 	}
 
+	textReplaces := []TextReplace{}
+	for path, tspec := range spec.Provisioners.TextReplace {
+		t := TextReplace{
+			Path: path,
+			From: tspec.From,
+			To:   tspec.To,
+		}
+		textReplaces = append(textReplaces, t)
+	}
+
 	spec.Parameters.Schema["type"] = "object"
 
 	execset, err := execversionmanager.New(
@@ -493,6 +509,7 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		Values:          vals,
 		ValuesSchema:    schema,
 		Files:           files,
+		TextReplaces:    textReplaces,
 		Executable:      execset,
 		Submodules:      submods,
 		ReleaseTrackers: trackers,
@@ -834,6 +851,49 @@ func (m *ModuleManager) doBuildSingle(mod *Module) (r *BuildResult, err error) {
 		}
 
 		r.Files = append(r.Files, f.Path)
+	}
+
+	for _, t := range mod.TextReplaces {
+		from, err := tmpl.Render("from", t.From, values)
+		if err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+
+		from = strings.TrimSpace(from)
+
+		if from == "" {
+			continue
+		}
+
+		to, err := tmpl.Render("to", t.To, values)
+		if err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+
+		to = strings.TrimSpace(to)
+
+		path, err := tmpl.Render("path", t.Path, values)
+		if err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+
+		target := filepath.Join(m.AbsWorkDir, path)
+		m.Logger.V(1).Info("textReplace", "path", target, "from", from, "to", to)
+		contents, err := m.fs.ReadFile(target)
+		if err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+
+		str := strings.ReplaceAll(string(contents), from, to)
+
+		if err := m.fs.WriteFile(target, []byte(str), 0644); err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
 	}
 
 	return r, nil
