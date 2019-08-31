@@ -15,7 +15,7 @@ jobs:
         - go-mod-cache-v1-{{ checksum "./go.sum" }}
         - go-mod-cache-v1-
     - run: go env
-    - run: variant build
+    - run: make build
     - save_cache:
         key: go-mod-cache-v1-{{ checksum "./go.sum" }}
         paths:
@@ -37,7 +37,7 @@ jobs:
         keys:
         - go-mod-cache-v1-{{ checksum "./go.sum" }}
         - go-mod-cache-v1-
-    - run: variant test
+    - run: make test
 
 workflows:
   version: 2
