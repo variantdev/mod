@@ -1,0 +1,46 @@
+version: 2
+
+jobs:
+
+  build:
+    docker:
+    - image: circleci/golang:1.12.4
+    environment:
+      GOPATH: /go
+    working_directory: /home/circleci/workspace/mod
+    steps:
+    - checkout
+    - restore_cache:
+        keys:
+        - go-mod-cache-v1-{{ checksum "./go.sum" }}
+        - go-mod-cache-v1-
+    - run: go env
+    - run: variant build
+    - save_cache:
+        key: go-mod-cache-v1-{{ checksum "./go.sum" }}
+        paths:
+        - /go/pkg/mod
+    - persist_to_workspace:
+        root: ./
+        paths:
+        - .
+
+  test:
+    environment:
+      GOPATH: /go
+    docker:
+    - image: circleci/golang:1.12.4
+    working_directory: /home/circleci/workspace/mod
+    steps:
+    - checkout
+    - restore_cache:
+        keys:
+        - go-mod-cache-v1-{{ checksum "./go.sum" }}
+        - go-mod-cache-v1-
+    - run: variant test
+
+workflows:
+  version: 2
+  build_and_test:
+    jobs:
+    - test
