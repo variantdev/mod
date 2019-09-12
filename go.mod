@@ -27,3 +27,5 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20190502103701-55513cacd4ae
 	k8s.io/klog v0.3.3
 )
+
+replace git.apache.org/thrift.git => github.com/apache/thrift v0.12.0
