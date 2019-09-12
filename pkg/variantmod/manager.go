@@ -541,24 +541,34 @@ func (m *ModuleManager) Up() error {
 	return m.lock(mod)
 }
 
-func (m *ModuleManager) Push(files []string, branch string) error {
+func (m *ModuleManager) Checkout(branch string) error {
 	g := gitops.New(
 		gitops.WD(m.AbsWorkDir),
 		gitops.Commander(m.cmdr),
 	)
-	if err := g.Checkout(branch); err != nil {
-		return err
+	return g.Checkout(branch)
+}
+
+func (m *ModuleManager) Push(files []string, branch string) (bool, error) {
+	g := gitops.New(
+		gitops.WD(m.AbsWorkDir),
+		gitops.Commander(m.cmdr),
+	)
+	if err := g.Add(files...); err != nil {
+		return false, err
 	}
-	if g.DiffExists() {
-		if err := g.Add(files...); err != nil {
-			return err
-		}
+	diffExists := g.DiffExists()
+	if diffExists {
 		if err := g.Commit("Automated update"); err != nil {
-			return err
+			return false, err
 		}
-		return g.Push(branch)
+		if err := g.Push(branch); err != nil {
+			return false, err
+		}
+		return true, nil
 	}
-	return nil
+	// No changes
+	return false, nil
 }
 
 func (m *ModuleManager) PullRequest(title, base, head string) error {
@@ -588,6 +598,7 @@ func (m *ModuleManager) PullRequest(title, base, head string) error {
 	}
 
 	p := strings.TrimSuffix(push, ".git")
+	p = strings.TrimSpace(p)
 	p = strings.TrimPrefix(p, "git@github.com:")
 	ownerRepo := strings.Split(p, "/")
 	if len(ownerRepo) != 2 {

@@ -75,6 +75,9 @@ func Execute() {
 	}
 
 	up := func(branch, title, base string, build, push, pr bool) error {
+		if pr {
+			push = true
+		}
 		man, err := variantmod.New(
 			variantmod.Logger(log),
 			variantmod.Commander(cmdsite.DefaultRunCommand),
@@ -86,6 +89,13 @@ func Execute() {
 			return err
 		}
 		files := []string{"variant.mod"}
+		ts := time.Now().Format("20060102150405")
+		branch = fmt.Sprintf("%s-%s", branch, ts)
+		if push {
+			if err := man.Checkout(branch); err != nil {
+				return err
+			}
+		}
 		if build {
 			r, err := man.Build()
 			if err != nil {
@@ -93,17 +103,14 @@ func Execute() {
 			}
 			files = r.Files
 		}
-		if pr {
-			push = true
-		}
-		ts := time.Now().Format("20060102150405")
-		branch = fmt.Sprintf("%s-%s", branch, ts)
+		var pushed bool
 		if push {
-			if err := man.Push(files, branch); err != nil {
+			pushed, err = man.Push(files, branch)
+			if err != nil {
 				return err
 			}
 		}
-		if pr {
+		if pr && pushed {
 			if err := man.PullRequest(title, base, branch); err != nil {
 				return err
 			}

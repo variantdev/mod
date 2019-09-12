@@ -63,11 +63,11 @@ func (c *Client) GetPushURL(name string) (string, error) {
 }
 
 func (c *Client) Push(branch string) error {
-	return c.git("push", []string{branch})
+	return c.git("push", []string{"origin", branch})
 }
 
 func (c *Client) DiffExists() bool {
-	_, _, err := c.sh.CaptureStrings(c.gitPath, []string{"diff", "--exit-code"})
+	_, _, err := c.sh.CaptureStrings(c.gitPath, []string{"diff", "--cached", "--exit-code"})
 	return err != nil
 }
 
