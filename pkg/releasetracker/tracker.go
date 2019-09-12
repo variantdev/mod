@@ -129,6 +129,12 @@ func New(conf Spec, opts ...Option) (*Tracker, error) {
 	return provider, nil
 }
 
+func debug(msg string, v ...interface{}) {
+	if os.Getenv("DEBUG") != "" {
+		fmt.Fprintf(os.Stderr, msg+"\n", v...)
+	}
+}
+
 func (p *Tracker) Latest(constraint string) (*Release, error) {
 	if constraint == "" {
 		constraint = "> 0.0.0"
@@ -143,6 +149,8 @@ func (p *Tracker) Latest(constraint string) (*Release, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	debug("releases: %+v", all)
 
 	var latestVer semver.Version
 	var latest *Release
@@ -197,9 +205,11 @@ func newGetterProvider(spec GetterJSONPath, r *Tracker) *getterJsonPathProvider 
 func newDockerHubImageTagsProvider(spec DockerImageTags, r *Tracker) *httpJsonPathProvider {
 	url := fmt.Sprintf("https://registry.hub.docker.com/v2/repositories/%s/tags/", spec.Source)
 	return &httpJsonPathProvider{
-		url:      url,
-		jsonpath: "$.results[*].name",
-		runtime:  r,
+		url:          url,
+		jsonpath:     "$.results[*].name",
+		runtime:      r,
+		nextpagePath: "$.next",
+		params:       map[string]string{"page_size": "1000",},
 	}
 }
 
@@ -256,6 +266,8 @@ func (p *getterJsonPathProvider) All() ([]*Release, error) {
 
 type httpJsonPathProvider struct {
 	url, jsonpath string
+	nextpagePath  string
+	params        map[string]string
 
 	runtime *Tracker
 }
@@ -263,7 +275,7 @@ type httpJsonPathProvider struct {
 var _ ReleaseProvider = &httpJsonPathProvider{}
 
 func (p *httpJsonPathProvider) All() ([]*Release, error) {
-	return p.runtime.releasesFromHttpJsonPath(p.url, p.jsonpath)
+	return p.runtime.releasesFromHttpJsonPath(p.url, p.jsonpath, p.nextpagePath, p.params)
 }
 
 func (p *Tracker) execScript(cmd string) ([]string, error) {
@@ -329,18 +341,61 @@ func (p *Tracker) releasesFromGetterJsonPath(spec GetterJSONPath) ([]*Release, e
 	return p.extractVersions(tmp, spec.Versions)
 }
 
-func (p *Tracker) releasesFromHttpJsonPath(url string, jpath string) ([]*Release, error) {
-	res, err := p.httpGetter.DoRequest(url)
-	if err != nil {
-		return nil, err
+func (p *Tracker) releasesFromHttpJsonPath(url string, jpath string, nextpagePath string, params map[string]string) ([]*Release, error) {
+	query := ""
+	for k, v := range params {
+		if query != "" {
+			query += "&"
+		}
+		query += k + "=" + v
 	}
 
-	tmp := interface{}(nil)
-	if err := yaml.Unmarshal([]byte(res), &tmp); err != nil {
-		return nil, err
+	var releases []*Release
+	for ; url != ""; {
+		var u string
+		if strings.Contains(url, query) {
+			u = url
+		} else {
+			if strings.Contains(url, "?") {
+				u = fmt.Sprintf("%s%s", url, query)
+			} else {
+				u = fmt.Sprintf("%s?%s", url, query)
+			}
+		}
+		debug("http get: %s", u)
+
+		res, err := p.httpGetter.DoRequest(u)
+		if err != nil {
+			return nil, err
+		}
+
+		tmp := interface{}(nil)
+		if err := yaml.Unmarshal([]byte(res), &tmp); err != nil {
+			return nil, err
+		}
+
+		debug("http response: %v", res)
+
+		page, err := p.extractVersions(tmp, jpath)
+		if err != nil {
+			return nil, err
+		}
+
+		releases = append(releases, page...)
+
+		if nextpagePath == "" {
+			break
+		}
+
+		nextUrl, err := p.extractString(tmp, nextpagePath)
+		if err != nil {
+			return nil, err
+		}
+
+		url = nextUrl
 	}
 
-	return p.extractVersions(tmp, jpath)
+	return releases, nil
 }
 
 func (p *Tracker) extractVersions(tmp interface{}, jpath string) ([]*Release, error) {
@@ -350,6 +405,24 @@ func (p *Tracker) extractVersions(tmp interface{}, jpath string) ([]*Release, er
 	}
 
 	return p.versionsToReleases(vs)
+}
+
+func (p *Tracker) extractString(tmp interface{}, path string) (string, error) {
+	v, err := maputil.RecursivelyCastKeysToStrings(tmp)
+	if err != nil {
+		return "", err
+	}
+
+	got, err := jsonpath.Get(path, v)
+	if err != nil {
+		return "", err
+	}
+
+	if got == nil {
+		return "", nil
+	}
+
+	return fmt.Sprintf("%v", got), nil
 }
 
 func (p *Tracker) versionsToReleases(vs []string) ([]*Release, error) {
@@ -428,7 +501,7 @@ func (p *Tracker) versionStringsToSemvers(vs []string) ([]*semver.Version, error
 			e := fmt.Errorf("parsing version: index %d: %q: %v", i, s, err)
 			p.Logger.V(1).Info("ignoring error", "err", e)
 		}
-		if v != nil{
+		if v != nil {
 			vss = append(vss, v)
 		}
 	}
