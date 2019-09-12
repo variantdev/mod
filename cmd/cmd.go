@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/variantdev/mod/pkg/cmdsite"
 	"github.com/variantdev/mod/pkg/loginfra"
 	"github.com/variantdev/mod/pkg/variantmod"
 	"k8s.io/klog/klogr"
@@ -74,7 +75,10 @@ func Execute() {
 	}
 
 	up := func(branch, title, base string, build, push, pr bool) error {
-		man, err := variantmod.New(variantmod.Logger(log))
+		man, err := variantmod.New(
+			variantmod.Logger(log),
+			variantmod.Commander(cmdsite.DefaultRunCommand),
+		)
 		if err != nil {
 			return err
 		}
