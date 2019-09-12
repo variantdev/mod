@@ -597,8 +597,8 @@ func (m *ModuleManager) PullRequest(title, base, head string) error {
 		return err
 	}
 
-	p := strings.TrimSuffix(push, ".git")
-	p = strings.TrimSpace(p)
+	p := strings.TrimSpace(push)
+	p = strings.TrimSuffix(p, ".git")
 	p = strings.TrimPrefix(p, "git@github.com:")
 	ownerRepo := strings.Split(p, "/")
 	if len(ownerRepo) != 2 {
