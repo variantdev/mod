@@ -600,6 +600,7 @@ func (m *ModuleManager) PullRequest(title, base, head string) error {
 	p := strings.TrimSpace(push)
 	p = strings.TrimSuffix(p, ".git")
 	p = strings.TrimPrefix(p, "git@github.com:")
+	p = strings.TrimPrefix(p, "https://github.com/")
 	ownerRepo := strings.Split(p, "/")
 	if len(ownerRepo) != 2 {
 		return fmt.Errorf("unexpected format of remote: %s", push)
