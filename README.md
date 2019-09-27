@@ -2,6 +2,10 @@
 
 `mod` is an universal package manager complements task runners and build tools like `make` and [variant](https://github.com/mumoshu/variant).
 
+It turns any set of files in Git/S3/GCS/HTTP as a reusable module with managed, versioned dependencies.
+
+Think of it as a `vgo`, `npm`, `bundle` alternative, but for any project.
+
 ## Getting started
 
 Let's assume you have a `Dockerfile` to build a Docker image containing specific version of `helm`:
