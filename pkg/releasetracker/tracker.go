@@ -136,16 +136,20 @@ func debug(msg string, v ...interface{}) {
 }
 
 func (p *Tracker) Latest(constraint string) (*Release, error) {
+	all, err := p.GetReleases()
+	if err != nil {
+		return nil, err
+	}
+
+	return getLatest(constraint, all)
+}
+
+func getLatest(constraint string, all []*Release) (*Release, error) {
 	if constraint == "" {
 		constraint = "> 0.0.0"
 	}
 
 	cons, err := semver.NewConstraint(constraint)
-	if err != nil {
-		return nil, err
-	}
-
-	all, err := p.GetReleases()
 	if err != nil {
 		return nil, err
 	}

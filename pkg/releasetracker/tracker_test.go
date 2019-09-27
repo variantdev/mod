@@ -1,11 +1,29 @@
 package releasetracker
 
 import (
+	"github.com/Masterminds/semver"
 	"github.com/variantdev/mod/pkg/cmdsite"
 	"github.com/variantdev/mod/pkg/vhttpget"
 	"gopkg.in/yaml.v3"
 	"testing"
 )
+
+func TestGetLatest(t *testing.T) {
+	v2, _ := semver.NewVersion("v2.0.0")
+	v3beta1, _ := semver.NewVersion("v3.0.0-beta.1")
+	rels := []*Release{
+		&Release{Semver: v2},
+		&Release{Semver: v3beta1},
+	}
+	lat, err := getLatest("> 1.0", rels)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !lat.Semver.Equal(v2) {
+		t.Errorf("unexpected release considered latest: expected=v2, got=%v", lat.Semver)
+	}
+}
 
 func TestProvider_JSONPath(t *testing.T) {
 	input := `releaseChannel:
