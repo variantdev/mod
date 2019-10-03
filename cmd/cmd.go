@@ -88,7 +88,7 @@ func Execute() {
 		if err := man.Up(); err != nil {
 			return err
 		}
-		files := []string{"variant.mod"}
+		files := []string{"variant.mod", "variant.lock"}
 		ts := time.Now().Format("20060102150405")
 		branch = fmt.Sprintf("%s-%s", branch, ts)
 		if push {
@@ -101,7 +101,7 @@ func Execute() {
 			if err != nil {
 				return err
 			}
-			files = r.Files
+			files = append(files, r.Files...)
 		}
 		var pushed bool
 		if push {
