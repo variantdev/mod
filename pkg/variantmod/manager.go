@@ -905,6 +905,8 @@ func (m *ModuleManager) doBuildSingle(mod *Module) (r *BuildResult, err error) {
 			m.Logger.V(1).Info(err.Error())
 			return nil, err
 		}
+
+		r.Files = append(r.Files, t.Path)
 	}
 
 	return r, nil
