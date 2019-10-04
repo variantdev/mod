@@ -1,5 +1,7 @@
 # mod
 
+[![CircleCI](https://circleci.com/gh/variantdev/mod.svg?style=svg)](https://circleci.com/gh/variantdev/mod)
+
 `mod` is an universal package manager complements task runners and build tools like `make` and [variant](https://github.com/mumoshu/variant).
 
 It turns any set of files in Git/S3/GCS/HTTP as a reusable module with managed, versioned dependencies.
