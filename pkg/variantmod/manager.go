@@ -377,7 +377,7 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 
 	// Resolve versions of dependencies
 	for alias, dep := range spec.Dependencies {
-		_, ok := verLock.Dependencies[alias]
+		preUp, ok := verLock.Dependencies[alias]
 		if ok {
 			if depspec.ForceUpdate {
 				m.Logger.V(2).Info("finding tracker", "alias", alias, "trackers", trackers)
@@ -388,6 +388,12 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 					if err != nil {
 						return nil, err
 					}
+
+					if preUp.Version == rel.Version {
+						m.Logger.V(2).Info("No update found", "alias", alias)
+						continue
+					}
+
 					prev := verLock.Dependencies[alias].Version
 					vals[alias] = Values{"version": rel.Version, "previousVersion": prev}
 
