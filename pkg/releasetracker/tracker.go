@@ -231,7 +231,7 @@ func newGitHubReleasesProvider(spec GitHubReleases, r *Tracker) *httpJsonPathPro
 	}
 }
 
-func newGitTagsProvider(spec GitTags, r *Tracker) *httpJsonPathProvider {
+func newGitHubTagsProvider(spec GitHubTags, r *Tracker) *httpJsonPathProvider {
 	host := spec.Host
 	if host == "" {
 		host = "api.github.com"
@@ -539,7 +539,10 @@ func (p *Tracker) GetProvider() (ReleaseProvider, error) {
 	} else if versionsFrom.DockerImageTags.Source != "" {
 		return newDockerHubImageTagsProvider(versionsFrom.DockerImageTags, p), nil
 	} else if versionsFrom.GitTags.Source != "" {
-		return newGitTagsProvider(versionsFrom.GitTags, p), nil
+		cmd := fmt.Sprintf("git ls-remote --tags git://%s.git | grep -v { | awk '{ print $2 }' | cut -d'/' -f 3", versionsFrom.GitTags.Source)
+		return newShellProvider(cmd, p), nil
+	} else if versionsFrom.GitHubTags.Source != "" {
+		return newGitHubTagsProvider(versionsFrom.GitHubTags, p), nil
 	} else if versionsFrom.GitHubReleases.Source != "" {
 		return newGitHubReleasesProvider(versionsFrom.GitHubReleases, p), nil
 	}

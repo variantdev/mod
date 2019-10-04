@@ -12,6 +12,7 @@ type VersionsFrom struct {
 	Exec            Exec            `yaml:"exec"`
 	JSONPath        GetterJSONPath  `yaml:"jsonPath"`
 	GitTags         GitTags         `yaml:"gitTags"`
+	GitHubTags      GitHubTags      `yaml:"githubTags"`
 	GitHubReleases  GitHubReleases  `yaml:"githubReleases"`
 	DockerImageTags DockerImageTags `yaml:"dockerImageTags"`
 }
@@ -36,6 +37,10 @@ type GetterJSONPath struct {
 }
 
 type GitTags struct {
+	Source string `yaml:"source"`
+}
+
+type GitHubTags struct {
 	Host   string `yaml:"host"`
 	Source string `yaml:"source"`
 }

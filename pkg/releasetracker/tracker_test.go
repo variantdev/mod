@@ -98,8 +98,65 @@ func TestProvider_Exec(t *testing.T) {
 func TestProvider_GitTags(t *testing.T) {
 	input := `releaseChannel:
   versionsFrom:
-    # This basically fetch "curl https://api.github.com/repos/mumoshu/variant/tags | jq -r '.[].name'"
+    # This basically runs "git ls-remote --tags git://github.com/mumoshu/variant.git" to fetch available versions
+    # Examples can be obtained by running:
+    #   git ls-remote --tags git://github.com/mumoshu/variant.git | grep -v { | awk '{ print $2 }' | cut -d'/' -f 3
     gitTags:
+      source: github.com/mumoshu/variant
+`
+
+	conf := &Config{}
+	if err := yaml.Unmarshal([]byte(input), conf); err != nil {
+		t.Fatal(err)
+	}
+
+	expectedStdout := `v0.21.2
+v0.22.0
+v0.23.0
+v0.24.0
+v0.24.1
+v0.25.0
+v0.25.1
+v0.25.2
+v0.26.0
+v0.27.0
+v0.27.1
+v0.27.2
+v0.27.3
+v0.27.4
+v0.27.5
+v0.28.0
+v0.29.0
+v0.30.0
+v0.31.0
+v0.31.1
+`
+
+	expectedInput := cmdsite.NewInput("sh", []string{"-c", "git ls-remote --tags git://github.com/mumoshu/variant.git | grep -v { | awk '{ print $2 }' | cut -d'/' -f 3"}, map[string]string{})
+	cmdr := cmdsite.NewTester(map[cmdsite.CommandInput]cmdsite.CommandOutput{
+		expectedInput: {Stdout: expectedStdout},
+	})
+	stable, err := New(conf.ReleaseChannel, Commander(cmdr))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	latest, err := stable.Latest("= 0.31.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := "0.31.1"
+	if latest.Version != expected {
+		t.Errorf("unexpected version: expected=%v, got=%v", expected, latest.Version)
+	}
+}
+
+func TestProvider_GitHubTags(t *testing.T) {
+	input := `releaseChannel:
+  versionsFrom:
+    # This basically fetch "curl https://api.github.com/repos/mumoshu/variant/tags | jq -r '.[].name'"
+    githubTags:
       source: mumoshu/variant
 `
 
