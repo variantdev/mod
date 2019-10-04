@@ -213,7 +213,7 @@ func newDockerHubImageTagsProvider(spec DockerImageTags, r *Tracker) *httpJsonPa
 		jsonpath:     "$.results[*].name",
 		runtime:      r,
 		nextpagePath: "$.next",
-		params:       map[string]string{"page_size": "1000",},
+		params:       map[string]string{"page_size": "1000"},
 	}
 }
 
@@ -227,6 +227,20 @@ func newGitHubReleasesProvider(spec GitHubReleases, r *Tracker) *httpJsonPathPro
 	return &httpJsonPathProvider{
 		url:      url,
 		jsonpath: "$[*].tag_name",
+		runtime:  r,
+	}
+}
+
+func newGitTagsProvider(spec GitTags, r *Tracker) *httpJsonPathProvider {
+	host := spec.Host
+	if host == "" {
+		host = "api.github.com"
+	}
+	url := fmt.Sprintf("https://%s/repos/%s/tags", host, spec.Source)
+
+	return &httpJsonPathProvider{
+		url:      url,
+		jsonpath: "$[*].name",
 		runtime:  r,
 	}
 }
@@ -355,7 +369,7 @@ func (p *Tracker) releasesFromHttpJsonPath(url string, jpath string, nextpagePat
 	}
 
 	var releases []*Release
-	for ; url != ""; {
+	for url != "" {
 		var u string
 		if strings.Contains(url, query) {
 			u = url
@@ -525,8 +539,7 @@ func (p *Tracker) GetProvider() (ReleaseProvider, error) {
 	} else if versionsFrom.DockerImageTags.Source != "" {
 		return newDockerHubImageTagsProvider(versionsFrom.DockerImageTags, p), nil
 	} else if versionsFrom.GitTags.Source != "" {
-		cmd := fmt.Sprintf("git ls-remote --tags git://%s.git | grep -v { | awk '{ print $2 }' | cut -d'/' -f 3", versionsFrom.GitTags.Source)
-		return newShellProvider(cmd, p), nil
+		return newGitTagsProvider(versionsFrom.GitTags, p), nil
 	} else if versionsFrom.GitHubReleases.Source != "" {
 		return newGitHubReleasesProvider(versionsFrom.GitHubReleases, p), nil
 	}

@@ -36,6 +36,7 @@ type GetterJSONPath struct {
 }
 
 type GitTags struct {
+	Host   string `yaml:"host"`
 	Source string `yaml:"source"`
 }
 

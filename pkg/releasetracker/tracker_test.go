@@ -98,11 +98,9 @@ func TestProvider_Exec(t *testing.T) {
 func TestProvider_GitTags(t *testing.T) {
 	input := `releaseChannel:
   versionsFrom:
-    # This basically runs "git ls-remote --tags git://github.com/mumoshu/variant.git" to fetch available versions
-    # Examples can be obtained by running:
-    #   git ls-remote --tags git://github.com/mumoshu/variant.git | grep -v { | awk '{ print $2 }' | cut -d'/' -f 3
+    # This basically fetch "curl https://api.github.com/repos/mumoshu/variant/tags | jq -r '.[].name'"
     gitTags:
-      source: github.com/mumoshu/variant
+      source: mumoshu/variant
 `
 
 	conf := &Config{}
@@ -110,43 +108,34 @@ func TestProvider_GitTags(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	expectedStdout := `v0.21.2
-v0.22.0
-v0.23.0
-v0.24.0
-v0.24.1
-v0.25.0
-v0.25.1
-v0.25.2
-v0.26.0
-v0.27.0
-v0.27.1
-v0.27.2
-v0.27.3
-v0.27.4
-v0.27.5
-v0.28.0
-v0.29.0
-v0.30.0
-v0.31.0
-v0.31.1
+	expectedOut := `[
+  {
+    "name": "v0.34.0",
+    "zipball_url": "https://api.github.com/repos/mumoshu/variant/zipball/v0.34.0",
+    "tarball_url": "https://api.github.com/repos/mumoshu/variant/tarball/v0.34.0",
+    "commit": {
+      "sha": "75ada548143a42629dab6485b09c871a1e486397",
+      "url": "https://api.github.com/repos/mumoshu/variant/commits/75ada548143a42629dab6485b09c871a1e486397"
+    },
+    "node_id": "MDM6UmVmNjQzNzI5MDE6djAuMzQuMA=="
+  }
+]
 `
-
-	expectedInput := cmdsite.NewInput("sh", []string{"-c", "git ls-remote --tags git://github.com/mumoshu/variant.git | grep -v { | awk '{ print $2 }' | cut -d'/' -f 3"}, map[string]string{})
-	cmdr := cmdsite.NewTester(map[cmdsite.CommandInput]cmdsite.CommandOutput{
-		expectedInput: {Stdout: expectedStdout},
-	})
-	stable, err := New(conf.ReleaseChannel, Commander(cmdr))
+	gets := map[vhttpget.TestGetInput]string{
+		vhttpget.TestGetInput{URL: "https://api.github.com/repos/mumoshu/variant/tags"}: expectedOut,
+	}
+	httpGetter := vhttpget.NewTester(gets)
+	stable, err := New(conf.ReleaseChannel, HttpGetter(httpGetter))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	latest, err := stable.Latest("= 0.31.1")
+	latest, err := stable.Latest("= 0.34.0")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	expected := "0.31.1"
+	expected := "0.34.0"
 	if latest.Version != expected {
 		t.Errorf("unexpected version: expected=%v, got=%v", expected, latest.Version)
 	}
@@ -155,7 +144,7 @@ v0.31.1
 func TestProvider_GitHubReleases(t *testing.T) {
 	input := `releaseChannel:
   versionsFrom:
-    # This basically fetch "curl https://api.github.com/repos/mumoshu/variant/releases | jq -r .[].tag_name"
+    # This basically fetch "curl https://api.github.com/repos/mumoshu/variant/releases | jq -r '.[].tag_name'"
     githubReleases:
       source: mumoshu/variant
 `
