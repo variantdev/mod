@@ -152,10 +152,56 @@ v0.31.1
 	}
 }
 
+func TestProvider_GitHubTags(t *testing.T) {
+	input := `releaseChannel:
+  versionsFrom:
+    # This basically fetch "curl https://api.github.com/repos/mumoshu/variant/tags | jq -r '.[].name'"
+    githubTags:
+      source: mumoshu/variant
+`
+
+	conf := &Config{}
+	if err := yaml.Unmarshal([]byte(input), conf); err != nil {
+		t.Fatal(err)
+	}
+
+	expectedOut := `[
+  {
+    "name": "v0.34.0",
+    "zipball_url": "https://api.github.com/repos/mumoshu/variant/zipball/v0.34.0",
+    "tarball_url": "https://api.github.com/repos/mumoshu/variant/tarball/v0.34.0",
+    "commit": {
+      "sha": "75ada548143a42629dab6485b09c871a1e486397",
+      "url": "https://api.github.com/repos/mumoshu/variant/commits/75ada548143a42629dab6485b09c871a1e486397"
+    },
+    "node_id": "MDM6UmVmNjQzNzI5MDE6djAuMzQuMA=="
+  }
+]
+`
+	gets := map[vhttpget.TestGetInput]string{
+		vhttpget.TestGetInput{URL: "https://api.github.com/repos/mumoshu/variant/tags"}: expectedOut,
+	}
+	httpGetter := vhttpget.NewTester(gets)
+	stable, err := New(conf.ReleaseChannel, HttpGetter(httpGetter))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	latest, err := stable.Latest("= 0.34.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	expected := "0.34.0"
+	if latest.Version != expected {
+		t.Errorf("unexpected version: expected=%v, got=%v", expected, latest.Version)
+	}
+}
+
 func TestProvider_GitHubReleases(t *testing.T) {
 	input := `releaseChannel:
   versionsFrom:
-    # This basically fetch "curl https://api.github.com/repos/mumoshu/variant/releases | jq -r .[].tag_name"
+    # This basically fetch "curl https://api.github.com/repos/mumoshu/variant/releases | jq -r '.[].tag_name'"
     githubReleases:
       source: mumoshu/variant
 `
