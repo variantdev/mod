@@ -500,7 +500,7 @@ func (p *Tracker) extractVersionStrings(tmp interface{}, jpath string) ([]string
 func (p *Tracker) versionStringsToSemvers(vs []string) ([]*semver.Version, error) {
 	vss := []*semver.Version{}
 	for i, s := range vs {
-		v, err := semver.NewVersion(s)
+		v, err := semver.NewVersion(strings.TrimSpace(s))
 		if err != nil {
 			e := fmt.Errorf("parsing version: index %d: %q: %v", i, s, err)
 			p.Logger.V(1).Info("ignoring error", "err", e)
