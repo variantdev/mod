@@ -3,6 +3,7 @@ package variantmod
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/go-logr/logr"
 	"github.com/google/go-github/v27/github"
@@ -14,6 +15,7 @@ import (
 	"github.com/variantdev/mod/pkg/maputil"
 	"github.com/variantdev/mod/pkg/releasetracker"
 	"github.com/variantdev/mod/pkg/tmpl"
+	"github.com/variantdev/mod/pkg/yamlpatch"
 	"github.com/xeipuuv/gojsonschema"
 	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v3"
@@ -42,6 +44,7 @@ type ProvisionersSpec struct {
 	Files       map[string]FileSpec        `yaml:"files"`
 	Executables execversionmanager.Config  `yaml:",inline"`
 	TextReplace map[string]TextReplaceSpec `yaml:"textReplace"`
+	YamlPatch   map[string][]YamlPatchSpec `yaml:"yamlPatch"`
 }
 
 type FileSpec struct {
@@ -52,6 +55,13 @@ type FileSpec struct {
 type TextReplaceSpec struct {
 	From string `yaml:"from"`
 	To   string `yaml:"to"`
+}
+
+type YamlPatchSpec struct {
+	Op string `yaml:"op"`
+	Path string `yaml:"path"`
+	Value interface{} `yaml:"value"`
+	From string `yaml:"string"`
 }
 
 type DependencySpec struct {
@@ -482,6 +492,25 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		textReplaces = append(textReplaces, t)
 	}
 
+	yamls := []YamlPatch{}
+	for path, yspec := range spec.Provisioners.YamlPatch {
+		patches := []Patch{}
+		for _, v := range yspec {
+			p := Patch{
+				Op: v.Op,
+				Path: v.Path,
+				Value: v.Value,
+				From: v.From,
+			}
+			patches = append(patches, p)
+		}
+		y := YamlPatch{
+			Path: path,
+			Patches: patches,
+		}
+		yamls = append(yamls, y)
+	}
+
 	spec.Parameters.Schema["type"] = "object"
 
 	execset, err := execversionmanager.New(
@@ -516,6 +545,7 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		ValuesSchema:    schema,
 		Files:           files,
 		TextReplaces:    textReplaces,
+		Yamls:           yamls,
 		Executable:      execset,
 		Submodules:      submods,
 		ReleaseTrackers: trackers,
@@ -914,6 +944,57 @@ func (m *ModuleManager) doBuildSingle(mod *Module) (r *BuildResult, err error) {
 		}
 
 		r.Files = append(r.Files, t.Path)
+	}
+
+	for _, y := range mod.Yamls {
+		path, err := tmpl.Render("path", y.Path, values)
+		if err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+
+		target := filepath.Join(m.AbsWorkDir, path)
+		contents, err := m.fs.ReadFile(target)
+		if err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+
+		out, err := json.Marshal(y.Patches)
+		if err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+		patchJSON, err := tmpl.Render("patches", string(out), values)
+		if err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+
+		var yml yaml.Node
+		if err := yaml.Unmarshal(contents, &yml); err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+
+		var v interface{}
+		if err := yml.Decode(&v); err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+		yamlpatch.Patch(&yml, patchJSON)
+
+		s, err := yaml.Marshal(yml.Content[0])
+		if err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+
+		if err := m.fs.WriteFile(target, s, 0644); err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+		r.Files = append(r.Files, y.Path)
 	}
 
 	return r, nil
