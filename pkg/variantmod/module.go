@@ -17,7 +17,7 @@ type Module struct {
 	ValuesSchema Values
 	Files        []File
 	TextReplaces []TextReplace
-	Yamls        []Yaml
+	Yamls        []YamlPatch
 
 	ReleaseChannel *releasetracker.Tracker
 	Executable     *execversionmanager.ExecVM
@@ -64,16 +64,16 @@ type TextReplace struct {
 	From, To string
 }
 
-type Yaml struct {
+type YamlPatch struct {
 	Path    string
-	Patches []YamlPatch
+	Patches []Patch
 }
 
-type YamlPatch struct {
-	Op    string `json:"op"`
-	Path  string `json:"path"`
+type Patch struct {
+	Op    string      `json:"op"`
+	Path  string      `json:"path"`
 	Value interface{} `json:"value"`
-	From  string `json:"from"`
+	From  string      `json:"from"`
 }
 
 func merge(src, dst map[string]struct{}) {

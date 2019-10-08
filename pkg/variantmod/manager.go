@@ -44,7 +44,7 @@ type ProvisionersSpec struct {
 	Files       map[string]FileSpec        `yaml:"files"`
 	Executables execversionmanager.Config  `yaml:",inline"`
 	TextReplace map[string]TextReplaceSpec `yaml:"textReplace"`
-	Yaml        map[string][]YamlSpec      `yaml:"yaml"`
+	YamlPatch   map[string][]YamlPatchSpec `yaml:"yamlPatch"`
 }
 
 type FileSpec struct {
@@ -57,7 +57,7 @@ type TextReplaceSpec struct {
 	To   string `yaml:"to"`
 }
 
-type YamlSpec struct {
+type YamlPatchSpec struct {
 	Op string `yaml:"op"`
 	Path string `yaml:"path"`
 	Value interface{} `yaml:"value"`
@@ -486,11 +486,11 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		textReplaces = append(textReplaces, t)
 	}
 
-	yamls := []Yaml{}
-	for path, yspec := range spec.Provisioners.Yaml {
-		patches := []YamlPatch{}
+	yamls := []YamlPatch{}
+	for path, yspec := range spec.Provisioners.YamlPatch {
+		patches := []Patch{}
 		for _, v := range yspec {
-			p := YamlPatch{
+			p := Patch{
 				Op: v.Op,
 				Path: v.Path,
 				Value: v.Value,
@@ -498,7 +498,7 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 			}
 			patches = append(patches, p)
 		}
-		y := Yaml{
+		y := YamlPatch{
 			Path: path,
 			Patches: patches,
 		}
