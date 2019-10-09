@@ -200,6 +200,17 @@ provisioners:
           matchLabels:
             os: linux
             arch: amd64
+    dockergo:
+      platforms:
+        # Adds $VARIANT_MOD_PATH/mod/cache/CACHE_KEY/dockergo to $PATH
+        # Or its shim at $VARIANT_MOD_PATH/MODULE_NAME/shims
+      - docker:
+          command: go
+          image: golang
+          tag: '{{.version}}'
+          volume:
+          - $PWD:/work
+          workdir: /work
 `,
 	}
 	fs, clean, err := vfst.NewTestFS(files)
@@ -272,20 +283,36 @@ provisioners:
 		t.Fatal(err)
 	}
 
-	stdout, _, err := sh.CaptureStrings("sh", []string{"-c", "go version"})
-	if err != nil {
-		t.Fatal(err)
+	{
+		stdout, _, err := sh.CaptureStrings("sh", []string{"-c", "go version"})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		actual := strings.TrimSpace(string(stdout))
+		os, arch := execversionmanager.OsArch()
+		if err != nil {
+			t.Fatal(err)
+		}
+		expected := fmt.Sprintf("go version go1.12.6 %s/%s", os, arch)
+
+		if actual != expected {
+			t.Errorf("unexpected go version output: expected=\"%s\", got=\"%s\"", expected, actual)
+		}
 	}
 
-	actual := strings.TrimSpace(string(stdout))
-	os, arch := execversionmanager.OsArch()
-	if err != nil {
-		t.Fatal(err)
-	}
-	expected := fmt.Sprintf("go version go1.12.6 %s/%s", os, arch)
+	{
+		stdout, _, err := sh.CaptureStrings("sh", []string{"-c", "dockergo version"})
+		if err != nil {
+			t.Fatal(err)
+		}
 
-	if actual != expected {
-		t.Errorf("unexpected go version output: expected=\"%s\", got=\"%s\"", expected, actual)
+		actual := strings.TrimSpace(string(stdout))
+		expected := fmt.Sprintf("go version go1.12.6 %s/%s", "linux", "amd64")
+
+		if actual != expected {
+			t.Errorf("unexpected go version output: expected=\"%s\", got=\"%s\"", expected, actual)
+		}
 	}
 }
 

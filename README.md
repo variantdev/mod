@@ -84,19 +84,14 @@ Run `mod build` and see `mod` retrieves the latest version number of `helm` that
 
 ## Next steps
 
-### Automate Dependency Updates
-
-Use [mod-action, a GitHub action for running mod](https://github.com/variantdev/mod-action) to periodically run `mod` and submit a pull request to update everything managed via `mod` automatically
-
-## Examples
-
-Navigate to the following examples to see practical usage of `mod`:
-
-- [examples/eks-k8s-vers](https://github.com/variantdev/mod/blob/master/examples/eks-k8s-vers) for updating your [eksctl] cluster on new K8s release
-- [examples/image-tag-in-dockerfile-and-config](https://github.com/variantdev/mod/tree/master/examples/image-tag-in-dockerfile-and-config) for updating your `Dockerfile` and `.circleci/config.yml` on new Golang release
+- [Learn about use-cases](#use-cases)
+- [See examples](#examples)
+- [Read API reference](#api-reference)
 
 ## Use-cases
 
+- Automate Any-Dependency Updates with GitHub Actions v2
+  - Use [mod-action, a GitHub action for running mod](https://github.com/variantdev/mod-action) to periodically run `mod` and submit a pull request to update everything managed via `mod` automatically
 - Automating container image updates
 - Initializing repository manually created from a [GitHub Repository Template](https://help.github.com/en/articles/creating-a-repository-from-a-template)
   - Configure your CI to run `mod up --build --pull-request --title "Initialize this repository"` in response to "repository created" webhook and submit a PR for initialization
@@ -110,7 +105,48 @@ Navigate to the following examples to see practical usage of `mod`:
 
 `mod up` updates dependencies of the project originally created from the template repo, re-rendering required files.
 
+## Examples
+
+Navigate to the following examples to see practical usage of `mod`:
+
+- [examples/eks-k8s-vers](https://github.com/variantdev/mod/blob/master/examples/eks-k8s-vers) for updating your [eksctl] cluster on new K8s release
+- [examples/image-tag-in-dockerfile-and-config](https://github.com/variantdev/mod/tree/master/examples/image-tag-in-dockerfile-and-config) for updating your `Dockerfile` and `.circleci/config.yml` on new Golang release
+
 ## API Reference
+
+### `docker` executable provisioner
+
+Setting `provisioners.executables.NAME.platforms[].docker` allows you to run `mod exec -- NAME $args` where the executable is backed by a docker image which is managed by `mod`.
+
+`variant.mod`:
+
+```
+parameters:
+  defaults:
+    version: "1.12.6"
+
+provisioners:
+  executables:
+    dockergo:
+      platforms:
+        # Adds $VARIANT_MOD_PATH/mod/cache/CACHE_KEY/dockergo to $PATH
+        # Or its shim at $VARIANT_MOD_PATH/MODULE_NAME/shims
+      - docker:
+          command: go
+          image: golang
+          tag: '{{.version}}'
+          volume:
+          - $PWD:/work
+          workdir: /work
+```
+
+```console
+$ go version
+go version go1.12.7 darwin/amd64
+
+$ mod exec -- dockergo version
+go version go1.12.6 linux/amd64
+```
 
 ### Template Functions
 

@@ -3,6 +3,7 @@ package execversionmanager
 import (
 	"fmt"
 	"github.com/go-logr/logr"
+	"github.com/k-kinzal/aliases/pkg/aliases/yaml"
 	"github.com/twpayne/go-vfs"
 	"github.com/variantdev/mod/pkg/cmdsite"
 	"github.com/variantdev/mod/pkg/depresolver"
@@ -22,8 +23,9 @@ type Executable struct {
 }
 
 type Platform struct {
-	Source   string   `yaml:"source"`
-	Selector Selector `yaml:"selector"`
+	Source   string          `yaml:"source"`
+	Docker   yaml.OptionSpec `yaml:"docker"`
+	Selector Selector        `yaml:"selector"`
 }
 
 type Selector struct {
@@ -213,34 +215,52 @@ func New(conf *Config, opts ...Option) (*ExecVM, error) {
 	return provider, nil
 }
 
-func (p *ExecVM) getPlatformSpecificBin(platform Platform) (*Bin, error) {
-	source, err := tmpl.Render("source", platform.Source, p.Values)
-	if err != nil {
-		return nil, err
-	}
+func (p *ExecVM) getPlatformSpecificBin(name string, platform Platform) (*Bin, error) {
+	var localCopy string
 
-	localCopy, err := p.dep.Resolve(source)
-	if err != nil {
-		return nil, err
-	}
+	if platform.Source != "" {
+		source, err := tmpl.Render("source", platform.Source, p.Values)
+		if err != nil {
+			return nil, err
+		}
 
-	translated := strings.Replace(localCopy, p.CacheDir, p.GoGetterCacheDir, 1)
+		localCopy, err = p.dep.Resolve(source)
+		if err != nil {
+			return nil, err
+		}
+
+		translated := strings.Replace(localCopy, p.CacheDir, p.GoGetterCacheDir, 1)
+
+		localCopy = translated
+
+	} else if platform.Docker.Image != "" {
+		var err error
+		localCopy, err = p.getDockerAlias(name, platform)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		return nil, fmt.Errorf("either source or docker must be specified in platform: %v", platform)
+	}
 
 	return &Bin{
-		Path: translated,
+		Path: localCopy,
 	}, nil
 }
 
-func (p *ExecVM) getBin(executable Executable) (*Bin, error) {
+func (p *ExecVM) getBin(name string, executable Executable) (*Bin, error) {
 	platform, matched, err := getMatchingPlatform(executable)
 	if err != nil {
 		return nil, fmt.Errorf("matching platform: %v", err)
 	}
 	if !matched {
-		os, arch := OsArch()
-		return nil, fmt.Errorf("no platform matched: os=%s, arch=%s", os, arch)
+		if len(executable.Platforms) > 1 {
+			os, arch := OsArch()
+			return nil, fmt.Errorf("no platform matched in %q: os=%s, arch=%s", name, os, arch)
+		}
+		platform = executable.Platforms[0]
 	}
-	return p.getPlatformSpecificBin(platform)
+	return p.getPlatformSpecificBin(name, platform)
 }
 
 func (p *ExecVM) Locate(name string) (*Bin, error) {
@@ -249,7 +269,7 @@ func (p *ExecVM) Locate(name string) (*Bin, error) {
 		return nil, fmt.Errorf("no executable defined: %s", name)
 	}
 
-	return p.getBin(executable)
+	return p.getBin(name, executable)
 }
 
 func (p *ExecVM) Build() error {
