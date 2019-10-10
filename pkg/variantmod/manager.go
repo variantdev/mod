@@ -26,6 +26,11 @@ import (
 	"strings"
 )
 
+const (
+	ModuleFileName = "variant.mod"
+	LockFileName   = "variant.lock"
+)
+
 type ModuleSpec struct {
 	Name string `yaml:"name"`
 
@@ -58,10 +63,10 @@ type TextReplaceSpec struct {
 }
 
 type YamlPatchSpec struct {
-	Op string `yaml:"op"`
-	Path string `yaml:"path"`
+	Op    string      `yaml:"op"`
+	Path  string      `yaml:"path"`
 	Value interface{} `yaml:"value"`
-	From string `yaml:"string"`
+	From  string      `yaml:"string"`
 }
 
 type DependencySpec struct {
@@ -238,7 +243,7 @@ func New(opts ...Option) (*ModuleManager, error) {
 }
 
 func (m *ModuleManager) LoadLockFile() (*ModVersionLock, error) {
-	bytes, err := m.fs.ReadFile(filepath.Join(m.AbsWorkDir, "variant.lock"))
+	bytes, err := m.fs.ReadFile(filepath.Join(m.AbsWorkDir, LockFileName))
 	if err != nil {
 		m.Logger.V(2).Info("load.readfile", "err", err.Error())
 		if !strings.HasSuffix(err.Error(), "no such file or directory") {
@@ -259,6 +264,11 @@ func (m *ModuleManager) LoadLockFile() (*ModVersionLock, error) {
 	return &lockContents, nil
 }
 
+func (m *ModuleManager) Enabled() bool {
+	_, err := m.fs.ReadFile(ModuleFileName)
+	return err == nil
+}
+
 func (m *ModuleManager) Load() (*Module, error) {
 	lockContents, err := m.LoadLockFile()
 	if err != nil {
@@ -266,7 +276,7 @@ func (m *ModuleManager) Load() (*Module, error) {
 	}
 
 	spec := DependencySpec{
-		Source:         filepath.Join(m.AbsWorkDir, "variant.mod"),
+		Source:         filepath.Join(m.AbsWorkDir, ModuleFileName),
 		Arguments:      map[string]interface{}{},
 		LockedVersions: *lockContents,
 	}
@@ -497,15 +507,15 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		patches := []Patch{}
 		for _, v := range yspec {
 			p := Patch{
-				Op: v.Op,
-				Path: v.Path,
+				Op:    v.Op,
+				Path:  v.Path,
 				Value: v.Value,
-				From: v.From,
+				From:  v.From,
 			}
 			patches = append(patches, p)
 		}
 		y := YamlPatch{
-			Path: path,
+			Path:    path,
 			Patches: patches,
 		}
 		yamls = append(yamls, y)
@@ -557,6 +567,23 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 
 type BuildResult struct {
 	Files []string
+}
+
+func (m *ModuleManager) GetShellIfEnabled() (*cmdsite.CommandSite, error) {
+	if m.Enabled() {
+		if _, err := m.Build(); err != nil {
+			return nil, err
+		}
+
+		mod, err := m.Load()
+		if err != nil {
+			return nil, err
+		}
+
+		return mod.Shell()
+	}
+
+	return nil, nil
 }
 
 func (m *ModuleManager) Build() (*BuildResult, error) {

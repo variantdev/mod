@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"github.com/go-logr/logr"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/variantdev/mod/pkg/cmdsite"
@@ -12,9 +13,7 @@ import (
 	"time"
 )
 
-func Execute() {
-	log := klogr.New()
-
+func New(log logr.Logger) *cobra.Command {
 	cmd := cobra.Command{
 		Use: "mod",
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -191,6 +190,14 @@ func Execute() {
 
 	// Hand parsing of remaining flags to pflags and cobra
 	pflag.CommandLine.AddGoFlagSet(fs)
+
+	return &cmd
+}
+
+func Execute() {
+	log := klogr.New()
+
+	cmd := New(log)
 
 	if err := cmd.Execute(); err != nil {
 		log.Error(err, err.Error())
