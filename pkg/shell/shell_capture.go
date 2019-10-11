@@ -75,6 +75,9 @@ func (s *Shell) Capture(cmd *Command, opts ...CaptureOpts) (*CaptureResult, erro
 				channels.Stdout <- text
 			}
 		}
+		if err := scanner.Err(); err != nil {
+			panic(err)
+		}
 	}()
 
 	errScanner := bufio.NewScanner(errReader)

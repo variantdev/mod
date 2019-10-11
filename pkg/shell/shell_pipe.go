@@ -11,13 +11,13 @@ import (
 func (s *Shell) Pipe(cmd *Command) (<-chan Result, io.ReadCloser, io.ReadCloser) {
 	res := make(chan Result, 1)
 
-	stdout, err := s.pipeStdout(cmd)
+	wstdout, stdout, err := s.pipeStdout(cmd)
 	if err != nil {
 		res <- Result{Error: fmt.Errorf("unable to pipe stdout: %v", err)}
 		return res, nil, nil
 	}
 
-	stderr, err := s.pipeStderr(cmd)
+	wstderr, stderr, err := s.pipeStderr(cmd)
 	if err != nil {
 		res <- Result{Error: fmt.Errorf("unable to pipe stderr: %v", err)}
 		return res, nil, nil
@@ -25,33 +25,33 @@ func (s *Shell) Pipe(cmd *Command) (<-chan Result, io.ReadCloser, io.ReadCloser)
 
 	go func() {
 		res <- s.Wait(cmd)
-		stdout.Close()
-		stderr.Close()
+		wstdout.Close()
+		wstderr.Close()
 	}()
 
 	return res, stdout, stderr
 }
 
-func (s *Shell) pipeStdout(cmd *Command) (io.ReadCloser, error) {
+func (s *Shell) pipeStdout(cmd *Command) (*os.File, io.ReadCloser, error) {
 	if cmd.Stdout != nil {
-		return nil, errors.New("exec: Stdout already set")
+		return nil, nil, errors.New("exec: Stdout already set")
 	}
 	pr, pw, err := os.Pipe()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	cmd.Stdout = pw
-	return pr, nil
+	return pw, pr, nil
 }
 
-func (s *Shell) pipeStderr(cmd *Command) (io.ReadCloser, error) {
+func (s *Shell) pipeStderr(cmd *Command) (*os.File, io.ReadCloser, error) {
 	if cmd.Stderr != nil {
-		return nil, errors.New("exec: Stderr already set")
+		return nil, nil, errors.New("exec: Stderr already set")
 	}
 	pr, pw, err := os.Pipe()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	cmd.Stderr = pw
-	return pr, nil
+	return pw, pr, nil
 }
