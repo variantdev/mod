@@ -33,7 +33,7 @@ func Patch(y *yaml.Node, patchJSON string) error {
 		return err
 	}
 
-	t := &Traversal{stack:[]interface{}{}}
+	t := &Traversal{stack: []interface{}{}}
 	t.pushState(y, nil, "$")
 	cmp.Equal(v1, v2, cmp.Reporter(t))
 

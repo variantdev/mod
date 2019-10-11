@@ -9,7 +9,7 @@ import (
 
 type TraversalState struct {
 	yml *yaml.Node
-	ps cmp.PathStep
+	ps  cmp.PathStep
 	key string
 }
 
@@ -18,21 +18,21 @@ type Traversal struct {
 }
 
 func (t *Traversal) pushState(yml *yaml.Node, ps cmp.PathStep, key string) {
-	t.stack = append(t.stack, TraversalState {
+	t.stack = append(t.stack, TraversalState{
 		yml: yml,
-		ps: ps,
+		ps:  ps,
 		key: key,
 	})
 }
 
 func (t *Traversal) popState() (yml *yaml.Node, ps cmp.PathStep, key string) {
-	v := t.stack[len(t.stack) - 1].(TraversalState)
-	t.stack = t.stack[:len(t.stack) - 1]
+	v := t.stack[len(t.stack)-1].(TraversalState)
+	t.stack = t.stack[:len(t.stack)-1]
 	return v.yml, v.ps, v.key
 }
 
 func (t *Traversal) state() (yml *yaml.Node, ps cmp.PathStep, key string) {
-	v := t.stack[len(t.stack) - 1].(TraversalState)
+	v := t.stack[len(t.stack)-1].(TraversalState)
 	return v.yml, v.ps, v.key
 }
 
@@ -41,7 +41,7 @@ func (t *Traversal) parentState() (yml *yaml.Node, ps cmp.PathStep, key string) 
 	if l < 0 {
 		return nil, nil, ""
 	}
-	v := t.stack[len(t.stack) - 2].(TraversalState)
+	v := t.stack[len(t.stack)-2].(TraversalState)
 	return v.yml, v.ps, v.key
 }
 
@@ -60,7 +60,7 @@ func (t *Traversal) PushStep(ps cmp.PathStep) {
 	case cmp.MapIndex:
 		index := -1
 		for i, n := range yml.Content {
-			if i % 2 > 0 {
+			if i%2 > 0 {
 				continue
 			}
 			if n.Value == p.Key().String() {
@@ -103,10 +103,10 @@ func (t *Traversal) Report(rs cmp.Result) {
 			parent.Content = []*yaml.Node{}
 		case yaml.SequenceNode:
 			// Always delete the last element
-			parent.Content = parent.Content[:len(parent.Content) - 1]
+			parent.Content = parent.Content[:len(parent.Content)-1]
 		case yaml.MappingNode:
 			for i, n := range parent.Content {
-				if i % 2 > 0 {
+				if i%2 > 0 {
 					continue
 				}
 				if n.Value == key {
@@ -145,9 +145,9 @@ func (t *Traversal) Report(rs cmp.Result) {
 			parent.Content = nodes
 		case yaml.MappingNode:
 			keyNode := yaml.Node{
-				Kind:        yaml.ScalarNode,
-				Tag:         "!!str",
-				Value:       key,
+				Kind:  yaml.ScalarNode,
+				Tag:   "!!str",
+				Value: key,
 			}
 			parent.Content = append(parent.Content, &keyNode, node.Content[0])
 		}
