@@ -90,6 +90,12 @@ func (t *Traversal) Report(rs cmp.Result) {
 		out, _ := json.Marshal(vy.Interface())
 		var node yaml.Node
 		yaml.Unmarshal(out, &node)
+		if yml.Kind == node.Content[0].Kind {
+			yml.Tag = node.Content[0].Tag
+			yml.Value = node.Content[0].Value
+			yml.Content = node.Content[0].Content
+			return
+		}
 		yml.Kind = node.Content[0].Kind
 		yml.Style = node.Content[0].Style
 		yml.Tag = node.Content[0].Tag

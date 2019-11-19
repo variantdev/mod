@@ -4,12 +4,11 @@ import (
 	"encoding/json"
 	jsonpatch "github.com/evanphx/json-patch"
 	"github.com/google/go-cmp/cmp"
-	"gopkg.in/yaml.v3"
 )
 
-func Patch(y *yaml.Node, patchJSON string) error {
+func (p *YAMLPatch) Patch(patchJSON string) error {
 	var v1 interface{}
-	if err := y.Decode(&v1); err != nil {
+	if err := p.node.Decode(&v1); err != nil {
 		return err
 	}
 
@@ -34,7 +33,7 @@ func Patch(y *yaml.Node, patchJSON string) error {
 	}
 
 	t := &Traversal{stack: []interface{}{}}
-	t.pushState(y, nil, "$")
+	t.pushState(p.node, nil, "$")
 	cmp.Equal(v1, v2, cmp.Reporter(t))
 
 	return nil

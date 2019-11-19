@@ -4,22 +4,20 @@ import (
 	"github.com/kylelemons/godebug/diff"
 	_ "github.com/kylelemons/godebug/diff"
 	"github.com/variantdev/mod/pkg/yamlpatch"
-	"gopkg.in/yaml.v3"
 	"strings"
 	"testing"
 )
 
 func Patch(yml string, jsonPatch string, expected string) string {
-	var node yaml.Node
-	if err := yaml.Unmarshal([]byte(yml), &node); err != nil {
+	p, err := yamlpatch.New([]byte(yml))
+	if err != nil {
+		panic(err)
+	}
+	if err := p.Patch(jsonPatch); err != nil {
 		panic(err)
 	}
 
-	if err := yamlpatch.Patch(&node, jsonPatch); err != nil {
-		panic(err)
-	}
-
-	out, err := yaml.Marshal(node.Content[0])
+	out, err := p.Marshal()
 	if err != nil {
 		panic(err)
 	}
