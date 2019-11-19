@@ -32,7 +32,6 @@ require (
 	golang.org/x/net v0.0.0-20190620200207-3b0461eec859 // indirect
 	golang.org/x/oauth2 v0.0.0-20181203162652-d668ce993890
 	golang.org/x/text v0.3.1-0.20181227161524-e6919f6577db // indirect
-	google.golang.org/appengine v1.4.0 // indirect
 	google.golang.org/genproto v0.0.0-20190404172233-64821d5d2107 // indirect
 	google.golang.org/grpc v1.22.0 // indirect
 	gopkg.in/go-playground/validator.v9 v9.30.0 // indirect

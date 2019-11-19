@@ -979,9 +979,8 @@ func (m *ModuleManager) doBuildSingle(mod *Module) (r *BuildResult, err error) {
 			m.Logger.V(1).Info(err.Error())
 			return nil, err
 		}
-
-		target := filepath.Join(m.AbsWorkDir, path)
-		contents, err := m.fs.ReadFile(target)
+		abspath := filepath.Join(m.AbsWorkDir, path)
+		origYAML, err := m.fs.ReadFile(abspath)
 		if err != nil {
 			m.Logger.V(1).Info(err.Error())
 			return nil, err
@@ -998,26 +997,22 @@ func (m *ModuleManager) doBuildSingle(mod *Module) (r *BuildResult, err error) {
 			return nil, err
 		}
 
-		var yml yaml.Node
-		if err := yaml.Unmarshal(contents, &yml); err != nil {
+		p, err := yamlpatch.New(origYAML)
+		if err != nil {
 			m.Logger.V(1).Info(err.Error())
 			return nil, err
 		}
-
-		var v interface{}
-		if err := yml.Decode(&v); err != nil {
+		if err := p.Patch(patchJSON); err != nil {
 			m.Logger.V(1).Info(err.Error())
 			return nil, err
 		}
-		yamlpatch.Patch(&yml, patchJSON)
-
-		s, err := yaml.Marshal(yml.Content[0])
+		modifiedYAML, err := p.Marshal()
 		if err != nil {
 			m.Logger.V(1).Info(err.Error())
 			return nil, err
 		}
 
-		if err := m.fs.WriteFile(target, s, 0644); err != nil {
+		if err := m.fs.WriteFile(abspath, modifiedYAML, 0644); err != nil {
 			m.Logger.V(1).Info(err.Error())
 			return nil, err
 		}
