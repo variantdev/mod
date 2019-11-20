@@ -643,9 +643,19 @@ func (m *ModuleManager) PullRequest(title, base, head string) error {
 
 	gc := github.NewClient(tc)
 
+
+	mod, err := m.Load()
+	if err != nil {
+		return err
+	}
+	t, err := tmpl.Render("title", title, mod.Values)
+	if err != nil {
+		return err
+	}
+
 	body := ``
 	newPr := github.NewPullRequest{
-		Title: &title,
+		Title: &t,
 		Head:  &head,
 		Base:  &base,
 		Body:  &body,
