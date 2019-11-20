@@ -10,8 +10,11 @@ import (
 	"github.com/variantdev/mod/pkg/depresolver"
 	"github.com/variantdev/mod/pkg/maputil"
 	"github.com/variantdev/mod/pkg/vhttpget"
+	"github.com/heroku/docker-registry-client/registry"
 	"gopkg.in/yaml.v3"
+	"io/ioutil"
 	"k8s.io/klog/klogr"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -206,14 +209,10 @@ func newGetterProvider(spec GetterJSONPath, r *Tracker) *getterJsonPathProvider 
 	}
 }
 
-func newDockerHubImageTagsProvider(spec DockerImageTags, r *Tracker) *httpJsonPathProvider {
-	url := fmt.Sprintf("https://registry.hub.docker.com/v2/repositories/%s/tags/", spec.Source)
-	return &httpJsonPathProvider{
-		url:          url,
-		jsonpath:     "$.results[*].name",
-		runtime:      r,
-		nextpagePath: "$.next",
-		params:       map[string]string{"page_size": "1000"},
+func newDockerHubImageTagsProvider(spec DockerImageTags, r *Tracker) *dockerImageTagsProvider {
+	return &dockerImageTagsProvider{
+		source:   spec.Source,
+		runtime:  r,
 	}
 }
 
@@ -280,6 +279,42 @@ var _ ReleaseProvider = &getterJsonPathProvider{}
 
 func (p *getterJsonPathProvider) All() ([]*Release, error) {
 	return p.runtime.releasesFromGetterJsonPath(p.spec)
+}
+
+type dockerImageTagsProvider struct {
+	source string
+	username string
+	password string
+
+	runtime *Tracker
+}
+
+func (p *dockerImageTagsProvider) All() ([]*Release, error) {
+	if p.username == "" {
+		p.username = os.Getenv("DOCKER_USERNAME")
+	}
+	if p.password == "" {
+		p.password = os.Getenv("DOCKER_PASSWORD")
+	}
+	w := log.Writer()
+	log.SetOutput(ioutil.Discard)
+	defer log.SetOutput(w)
+	hub, err := registry.New("https://registry.hub.docker.com/", p.username, p.password)
+	if err != nil {
+		return nil, err
+	}
+
+	tags, err := hub.Tags(p.source)
+	if err != nil {
+		return nil, err
+	}
+
+	releases, err := p.runtime.versionsToReleases(tags)
+	if err != nil {
+		return nil, err
+	}
+
+	return releases, nil
 }
 
 type httpJsonPathProvider struct {
