@@ -12,7 +12,9 @@ import (
 	"github.com/variantdev/mod/pkg/vhttpget"
 	"github.com/heroku/docker-registry-client/registry"
 	"gopkg.in/yaml.v3"
+	"io/ioutil"
 	"k8s.io/klog/klogr"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -294,7 +296,9 @@ func (p *dockerImageTagsProvider) All() ([]*Release, error) {
 	if p.password == "" {
 		p.password = os.Getenv("DOCKER_PASSWORD")
 	}
-
+	w := log.Writer()
+	log.SetOutput(ioutil.Discard)
+	defer log.SetOutput(w)
 	hub, err := registry.New("https://registry.hub.docker.com/", p.username, p.password)
 	if err != nil {
 		return nil, err
