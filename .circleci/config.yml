@@ -4,7 +4,7 @@ jobs:
 
   build:
     docker:
-    - image: circleci/golang:1.12.4
+    - image: circleci/golang:1.13
     environment:
       GOPATH: /home/circleci/go
     working_directory: /home/circleci/workspace/mod
@@ -38,9 +38,9 @@ jobs:
         - go-mod-cache-v1-{{ checksum "./go.sum" }}
         - go-mod-cache-v1-
     - run:
-        name: Install go 1.12.4
+        name: Install go 1.13
         command: |
-          curl https://storage.googleapis.com/golang/go1.12.4.linux-amd64.tar.gz | tar zxvf - go
+          curl https://storage.googleapis.com/golang/go1.13.4.linux-amd64.tar.gz | tar zxvf - go
           sudo rm -rf /usr/local/go
           sudo mv go /usr/local/go
           go version
@@ -50,7 +50,7 @@ jobs:
     environment:
       GOPATH: /home/circleci/go
     docker:
-    - image: circleci/golang:1.12.4
+    - image: circleci/golang:1.13
     steps:
     - checkout
     # We can't use attach_workpace due to that CircleCI skips `test` when it is already run before tagging
@@ -65,27 +65,10 @@ workflows:
   build_and_test:
     jobs:
     - build
-    - test:
-        requires:
-        - build
-  release:
-    jobs:
-    - build:
-        filters:
-          branches:
-            ignore: /.*/
-          tags:
-            only: /v[0-9]+(\.[0-9]+)*(-.*)*/
-    - test:
-        requires:
-        - build
-        filters:
-          branches:
-            ignore: /.*/
-          tags:
-            only: /v[0-9]+(\.[0-9]+)*(-.*)*/
+    - test
     - release:
         requires:
+        - build
         - test
         filters:
           branches:
