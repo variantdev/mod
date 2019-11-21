@@ -78,6 +78,8 @@ workflows:
         filters:
           branches:
             ignore: /v[0-9]+(\.[0-9]+)*(-.*)*/
+  tagged:
+    jobs:
     - prerelease-build:
         filters:
           branches:
