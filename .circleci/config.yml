@@ -2,7 +2,7 @@ version: 2
 
 jobs:
 
-  build:
+  build: &build
     docker:
     - image: circleci/golang:1.13
     environment:
@@ -25,7 +25,10 @@ jobs:
         paths:
         - .
 
-  test:
+  prerelease-build:
+    <<: *build
+
+  test: &test
     environment:
       GOPATH: /home/circleci/go
     machine: true
@@ -46,6 +49,9 @@ jobs:
           go version
     - run: make test
 
+  prerelease-test:
+    <<: *test
+
   release:
     environment:
       GOPATH: /home/circleci/go
@@ -64,12 +70,32 @@ workflows:
   version: 2
   build_and_test:
     jobs:
-    - build
-    - test
+    - build:
+        filters:
+          branches:
+            ignore: /v[0-9]+(\.[0-9]+)*(-.*)*/
+    - test:
+        filters:
+          branches:
+            ignore: /v[0-9]+(\.[0-9]+)*(-.*)*/
+  tagged:
+    jobs:
+    - prerelease-build:
+        filters:
+          branches:
+            ignore: /.*/
+          tags:
+            only: /v[0-9]+(\.[0-9]+)*(-.*)*/
+    - prerelease-test:
+        filters:
+          branches:
+            ignore: /.*/
+          tags:
+            only: /v[0-9]+(\.[0-9]+)*(-.*)*/
     - release:
         requires:
-        - build
-        - test
+        - prerelease-build
+        - prerelease-test
         filters:
           branches:
             ignore: /.*/
