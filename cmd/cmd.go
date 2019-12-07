@@ -84,6 +84,9 @@ func New(log logr.Logger) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if err := man.Checkout(base); err != nil {
+			return err
+		}
 		if err := man.Up(); err != nil {
 			return err
 		}

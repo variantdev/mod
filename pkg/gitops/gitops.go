@@ -3,6 +3,7 @@ package gitops
 import (
 	"github.com/variantdev/mod/pkg/cmdsite"
 	"os"
+	"strings"
 )
 
 type Client struct {
@@ -38,7 +39,10 @@ func New(opt ...Option) *Client {
 	return c
 }
 
-func (c *Client) Checkout(branch string) error {
+func (c *Client) Checkout(branch string, has bool) error {
+	if has {
+		return c.git("checkout", []string{branch})
+	}
 	return c.git("checkout", []string{"-b", branch})
 }
 
@@ -52,6 +56,27 @@ func (c *Client) Commit(msg string) error {
 
 func (c *Client) Clone(repo string) error {
 	return c.git("clone", []string{repo})
+}
+
+func (c *Client) GetCurrentBranch() (string, error) {
+	stdout, _, err := c.sh.CaptureStrings(c.gitPath, []string{"rev-parse", "--abbrev-ref", "HEAD"})
+	if err != nil {
+		return "", err
+	}
+	return strings.Trim(stdout, "\n"), nil
+}
+
+func (c *Client) HasBranch(branch string) (bool, error) {
+	stdout, _, err := c.sh.CaptureStrings(c.gitPath, []string{"branch", "--list"})
+	if err != nil {
+		return false, err
+	}
+	for _, line := range strings.Split(stdout, "\n") {
+		if strings.TrimSpace(line) == branch {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (c *Client) GetPushURL(name string) (string, error) {
