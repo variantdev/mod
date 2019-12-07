@@ -73,7 +73,7 @@ func New(log logr.Logger) *cobra.Command {
 		},
 	}
 
-	up := func(branch, title, base string, build, push, pr bool) error {
+	up := func(branch, title, body, base string, build, push, pr, skipDuplicatePRBody, skipDuplicatePRTitle bool) error {
 		if pr {
 			push = true
 		}
@@ -110,7 +110,7 @@ func New(log logr.Logger) *cobra.Command {
 			}
 		}
 		if pr && pushed {
-			if err := man.PullRequest(title, base, branch); err != nil {
+			if err := man.PullRequest(title, body, base, branch, skipDuplicatePRBody, skipDuplicatePRTitle); err != nil {
 				return err
 			}
 		}
@@ -118,12 +118,12 @@ func New(log logr.Logger) *cobra.Command {
 	}
 
 	{
-		var repo, branch, base, title string
-		var build, push, pr bool
+		var repo, branch, base, title, body string
+		var build, push, pr, skipDuplicatePRBody, skipDuplicatePRTitle bool
 		modup := &cobra.Command{
 			Use: "up",
 			RunE: func(cmd *cobra.Command, args []string) error {
-				return up(branch, title, base, build, push, pr)
+				return up(branch, title, body, base, build, push, pr, skipDuplicatePRBody, skipDuplicatePRTitle)
 			},
 		}
 		modup.Flags().BoolVar(&build, "build", false, "Run `build` after update")
@@ -133,12 +133,15 @@ func New(log logr.Logger) *cobra.Command {
 		modup.Flags().StringVar(&base, "base", "master", "Branch to which pull request is sent to")
 		modup.Flags().BoolVar(&pr, "pull-request", false, "Send a pull request after push. Implies --push")
 		modup.Flags().StringVar(&title, "title", "Update dependencies", "Title of the pull-request to be sent")
+		modup.Flags().StringVar(&body, "body", "{{ .RawLock | sha256 }}", "Title of the pull-request to be sent")
+		modup.Flags().BoolVar(&skipDuplicatePRBody, "skip-duplicate-pull-request-body", false, "If true, PR creation will be skipped if the PR body is duplicated.")
+		modup.Flags().BoolVar(&skipDuplicatePRTitle, "skip-duplicate-pull-request-title", false, "If true, PR creation will be skipped if the PR title is duplicated.")
 		cmd.AddCommand(modup)
 	}
 
 	{
-		var branch, base, title string
-		var build, push, pr, public bool
+		var branch, base, title, body string
+		var build, push, pr, public, skipDuplicatePRBody, skipDuplicatePRTitle bool
 		modcreate := &cobra.Command{
 			Use:  "create TEMPLATE_REPO NEW_REPO",
 			Args: cobra.ExactArgs(2),
@@ -154,7 +157,7 @@ func New(log logr.Logger) *cobra.Command {
 					return err
 				}
 
-				return up(branch, title, base, build, push, pr)
+				return up(branch, title, body, base, build, push, pr, skipDuplicatePRBody, skipDuplicatePRTitle)
 			},
 		}
 		modcreate.Flags().BoolVar(&build, "build", true, "Run `build` after update")
@@ -164,6 +167,9 @@ func New(log logr.Logger) *cobra.Command {
 		modcreate.Flags().BoolVar(&pr, "pull-request", false, "Send a pull request after push. Implies --push")
 		modcreate.Flags().BoolVar(&public, "public", false, "Make the repository public")
 		modcreate.Flags().StringVar(&title, "title", "Initialize repository", "Title of the pull-request to be sent")
+		modcreate.Flags().StringVar(&body, "body", "{{ .RawLock | sha256 }}", "Title of the pull-request to be sent")
+		modcreate.Flags().BoolVar(&skipDuplicatePRBody, "skip-duplicate-pull-request-body", false, "If true, PR creation will be skipped if the PR body is duplicated.")
+		modcreate.Flags().BoolVar(&skipDuplicatePRTitle, "skip-duplicate-pull-request-title", false, "If true, PR creation will be skipped if the PR title is duplicated.")
 		cmd.AddCommand(modcreate)
 	}
 

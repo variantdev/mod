@@ -2,6 +2,8 @@ package tmpl
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"strings"
 	"text/template"
@@ -20,6 +22,10 @@ func Render(name, text string, data interface{}) (string, error) {
 		},
 		"trimSpace": func(s string) string {
 			return strings.TrimSpace(s)
+		},
+		"sha256": func(s string) string {
+			b := sha256.Sum256([]byte(s))
+			return hex.EncodeToString(b[:])
 		},
 	}
 	tpl := template.New(name).Option("missingkey=error").Funcs(funcs)

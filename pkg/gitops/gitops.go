@@ -3,6 +3,7 @@ package gitops
 import (
 	"github.com/variantdev/mod/pkg/cmdsite"
 	"os"
+	"strings"
 )
 
 type Client struct {
@@ -69,6 +70,18 @@ func (c *Client) Push(branch string) error {
 func (c *Client) DiffExists() bool {
 	_, _, err := c.sh.CaptureStrings(c.gitPath, []string{"diff", "--cached", "--exit-code"})
 	return err != nil
+}
+
+func (c *Client) Repo() (string, error) {
+	push, err := c.GetPushURL("origin")
+	if err != nil {
+		return "", err
+	}
+	p := strings.TrimSpace(push)
+	p = strings.TrimSuffix(p, ".git")
+	p = strings.TrimPrefix(p, "git@github.com:")
+	p = strings.TrimPrefix(p, "https://github.com/")
+	return p, nil
 }
 
 func (c *Client) git(cmd string, args []string) error {
