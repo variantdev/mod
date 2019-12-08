@@ -72,7 +72,7 @@ func (c *Client) HasBranch(branch string) (bool, error) {
 		return false, err
 	}
 	for _, line := range strings.Split(stdout, "\n") {
-		if strings.TrimSpace(line) == branch {
+		if strings.Trim(line, " \t\n\r*") == branch {
 			return true, nil
 		}
 	}
