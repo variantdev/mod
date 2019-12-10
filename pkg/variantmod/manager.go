@@ -6,18 +6,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/go-logr/logr"
-	"github.com/google/go-github/v27/github"
 	"github.com/twpayne/go-vfs"
 	"github.com/variantdev/mod/pkg/cmdsite"
 	"github.com/variantdev/mod/pkg/depresolver"
 	"github.com/variantdev/mod/pkg/execversionmanager"
 	"github.com/variantdev/mod/pkg/gitops"
+	"github.com/variantdev/mod/pkg/gitrepo"
 	"github.com/variantdev/mod/pkg/maputil"
 	"github.com/variantdev/mod/pkg/releasetracker"
 	"github.com/variantdev/mod/pkg/tmpl"
 	"github.com/variantdev/mod/pkg/yamlpatch"
 	"github.com/xeipuuv/gojsonschema"
-	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v3"
 	"k8s.io/klog"
 	"k8s.io/klog/klogr"
@@ -251,12 +250,13 @@ func (m *ModuleManager) LoadLockFile() (*ModVersionLock, error) {
 		}
 	}
 
-	lockContents := ModVersionLock{Dependencies: map[string]DepVersionLock{}}
+	lockContents := ModVersionLock{Dependencies: map[string]DepVersionLock{}, RawLock: string(bytes)}
 	if bytes != nil {
 		m.Logger.V(2).Info("load.yaml.unmarshal.begin", "bytes", string(bytes))
 		if err := yaml.Unmarshal(bytes, &lockContents); err != nil {
 			return nil, err
 		}
+		lockContents.RawLock = string(bytes)
 
 		m.Logger.V(2).Info("load.yaml.unmarshal.end", "data", lockContents)
 	}
@@ -647,17 +647,30 @@ func (m *ModuleManager) Push(files []string, branch string) (bool, error) {
 	return false, nil
 }
 
-func (m *ModuleManager) PullRequest(title, base, head string) error {
-	ctx := context.Background()
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: os.Getenv("GITHUB_TOKEN")},
-	)
-	tc := oauth2.NewClient(ctx, ts)
-
-	gc := github.NewClient(tc)
-
-
+func (m *ModuleManager) PullRequest(title, body, base, head string, skipDuplicatePRBody, skipDuplicatePRTitle bool) error {
 	mod, err := m.Load()
+	if err != nil {
+		return err
+	}
+	ctx := context.Background()
+	gc := gitrepo.NewClient(ctx)
+
+	g := gitops.New(
+		gitops.WD(m.AbsWorkDir),
+		gitops.Commander(m.cmdr),
+	)
+	r, err := g.Repo()
+	if err != nil {
+		return err
+	}
+	ownerRepo := strings.Split(r, "/")
+	if len(ownerRepo) != 2 {
+		return fmt.Errorf("unexpected format of remote: %s", r)
+	}
+	owner := ownerRepo[0]
+	repo := ownerRepo[1]
+
+	b, err:= tmpl.Render("body", body, mod.Values)
 	if err != nil {
 		return err
 	}
@@ -666,37 +679,32 @@ func (m *ModuleManager) PullRequest(title, base, head string) error {
 		return err
 	}
 
-	body := ``
-	newPr := github.NewPullRequest{
-		Title: &t,
-		Head:  &head,
-		Base:  &base,
-		Body:  &body,
+	if skipDuplicatePRBody || skipDuplicatePRTitle {
+		query := &gitrepo.Query{State: "open"}
+		if skipDuplicatePRBody {
+			query.Body = b
+		}
+		if skipDuplicatePRTitle {
+			query.Title = t
+		}
+		issues, err := gc.SearchIssues(ctx, owner, repo, query)
+		if err != nil {
+			return err
+		}
+		if len(issues) > 0 {
+			klog.V(0).Infof("skipped due to duplicate pull request: #%d", issues[0].GetNumber())
+			return nil
+		}
 	}
 
-	g := gitops.New(
-		gitops.WD(m.AbsWorkDir),
-		gitops.Commander(m.cmdr),
-	)
-	push, err := g.GetPushURL("origin")
+	newPr := gitrepo.NewPullRequestOptions{
+		Title: t,
+		Head:  head,
+		Base:  base,
+		Body:  b,
+	}
+	pr, err := gc.NewPullRequest(ctx, owner, repo, &newPr)
 	if err != nil {
-		return err
-	}
-
-	p := strings.TrimSpace(push)
-	p = strings.TrimSuffix(p, ".git")
-	p = strings.TrimPrefix(p, "git@github.com:")
-	p = strings.TrimPrefix(p, "https://github.com/")
-	ownerRepo := strings.Split(p, "/")
-	if len(ownerRepo) != 2 {
-		return fmt.Errorf("unexpected format of remote: %s", push)
-	}
-	owner := ownerRepo[0]
-	repo := ownerRepo[1]
-
-	pr, res, err := gc.PullRequests.Create(ctx, owner, repo, &newPr)
-	if err != nil {
-		klog.V(1).Infof("create pull request: %v", res)
 		return fmt.Errorf("create pull request: %v", err)
 	}
 
@@ -707,17 +715,8 @@ func (m *ModuleManager) PullRequest(title, base, head string) error {
 
 func (m *ModuleManager) Create(templateRepo, newRepo string, public bool) error {
 	ctx := context.Background()
-	ts := oauth2.StaticTokenSource(
-		&oauth2.Token{AccessToken: os.Getenv("GITHUB_TOKEN")},
-	)
-	tc := oauth2.NewClient(ctx, ts)
 
-	gc := github.NewClient(tc)
-
-	g := gitops.New(
-		gitops.WD(m.AbsWorkDir),
-		gitops.Commander(m.cmdr),
-	)
+	gc := gitrepo.NewClient(ctx)
 
 	t := strings.TrimSuffix(templateRepo, ".git")
 	t = strings.TrimPrefix(t, "git@github.com:")
@@ -739,20 +738,22 @@ func (m *ModuleManager) Create(templateRepo, newRepo string, public bool) error 
 
 	private := !public
 
-	req := github.TemplateRepoRequest{
-		Name:    &nRepo,
-		Owner:   &nOwner,
-		Private: &private,
+	opt := &gitrepo.NewRepositoryOption{
+		Private:       private,
+		TemplateOwner: tOwner,
+		TemplateRepo:  tRepo,
 	}
-
-	createdRepo, res, err := gc.Repositories.CreateFromTemplate(ctx, tOwner, tRepo, &req)
+	createdRepo, err := gc.NewRepository(ctx, nOwner, nRepo, opt)
 	if err != nil {
-		klog.V(1).Infof("create repository from template: %v", res)
 		return fmt.Errorf("create repository from template: %v", err)
 	}
 
 	klog.V(2).Infof("repository created: %+v", createdRepo)
 
+	g := gitops.New(
+		gitops.WD(m.AbsWorkDir),
+		gitops.Commander(m.cmdr),
+	)
 	if err := g.Clone("git@github.com:" + newRepo); err != nil {
 		return err
 	}

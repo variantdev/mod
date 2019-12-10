@@ -30,6 +30,7 @@ type Module struct {
 
 type ModVersionLock struct {
 	Dependencies map[string]DepVersionLock `yaml:"dependencies"`
+	RawLock string `yaml:"-"`
 }
 
 type DepVersionLock struct {
@@ -38,7 +39,7 @@ type DepVersionLock struct {
 }
 
 func (l ModVersionLock) ToMap() map[string]interface{} {
-	return map[string]interface{}{"Dependencies": l.ToDepsMap()}
+	return map[string]interface{}{"Dependencies": l.ToDepsMap(), "RawLock": l.RawLock}
 }
 
 func (l ModVersionLock) ToDepsMap() map[string]interface{} {
