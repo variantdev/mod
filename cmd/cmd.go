@@ -143,8 +143,8 @@ func New(log logr.Logger) *cobra.Command {
 		modup.Flags().BoolVar(&pr, "pull-request", false, "Send a pull request after push. Implies --push")
 		modup.Flags().StringVar(&title, "title", "Update dependencies", "Title of the pull-request to be sent")
 		modup.Flags().StringVar(&body, "body", "{{ .RawLock | sha256 }}", "Title of the pull-request to be sent")
-		modup.Flags().BoolVar(&skipDuplicatePRBody, "skip-duplicate-pull-request-body", false, "If true, PR creation will be skipped if the PR body is duplicated.")
-		modup.Flags().BoolVar(&skipDuplicatePRTitle, "skip-duplicate-pull-request-title", false, "If true, PR creation will be skipped if the PR title is duplicated.")
+		modup.Flags().BoolVar(&skipDuplicatePRBody, "skip-on-duplicate-pull-request-body", false, "If true, PR creation will be skipped if the PR body is duplicated.")
+		modup.Flags().BoolVar(&skipDuplicatePRTitle, "skip-on-duplicate-pull-request-title", false, "If true, PR creation will be skipped if the PR title is duplicated.")
 		cmd.AddCommand(modup)
 	}
 
@@ -177,8 +177,8 @@ func New(log logr.Logger) *cobra.Command {
 		modcreate.Flags().BoolVar(&public, "public", false, "Make the repository public")
 		modcreate.Flags().StringVar(&title, "title", "Initialize repository", "Title of the pull-request to be sent")
 		modcreate.Flags().StringVar(&body, "body", "{{ .RawLock | sha256 }}", "Title of the pull-request to be sent")
-		modcreate.Flags().BoolVar(&skipDuplicatePRBody, "skip-duplicate-pull-request-body", false, "If true, PR creation will be skipped if the PR body is duplicated.")
-		modcreate.Flags().BoolVar(&skipDuplicatePRTitle, "skip-duplicate-pull-request-title", false, "If true, PR creation will be skipped if the PR title is duplicated.")
+		modcreate.Flags().BoolVar(&skipDuplicatePRBody, "skip-on-duplicate-pull-request-body", false, "If true, PR creation will be skipped if the PR body is duplicated.")
+		modcreate.Flags().BoolVar(&skipDuplicatePRTitle, "skip-on-duplicate-pull-request-title", false, "If true, PR creation will be skipped if the PR title is duplicated.")
 		cmd.AddCommand(modcreate)
 	}
 
