@@ -609,7 +609,20 @@ func (m *ModuleManager) Checkout(branch string) error {
 		gitops.WD(m.AbsWorkDir),
 		gitops.Commander(m.cmdr),
 	)
-	return g.Checkout(branch)
+	b, err := g.GetCurrentBranch()
+	if err != nil {
+		return err
+	}
+	if branch == b {
+		return nil
+	}
+
+	has, err := g.HasBranch(branch)
+	if err != nil {
+		return err
+	}
+
+	return g.Checkout(branch, has)
 }
 
 func (m *ModuleManager) Push(files []string, branch string) (bool, error) {

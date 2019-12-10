@@ -10,6 +10,7 @@ import (
 	"github.com/variantdev/mod/pkg/variantmod"
 	"k8s.io/klog/klogr"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -84,16 +85,21 @@ func New(log logr.Logger) *cobra.Command {
 		if err != nil {
 			return err
 		}
+		if err := man.Checkout(base); err != nil {
+			return err
+		}
 		if err := man.Up(); err != nil {
 			return err
 		}
 		files := []string{"variant.mod", "variant.lock"}
-		ts := time.Now().Format("20060102150405")
-		branch = fmt.Sprintf("%s-%s", branch, ts)
-		if push {
+		if !strings.HasPrefix(base, branch) && push {
+			ts := time.Now().Format("20060102150405")
+			branch = fmt.Sprintf("%s-%s", branch, ts)
 			if err := man.Checkout(branch); err != nil {
 				return err
 			}
+		} else {
+			branch = base
 		}
 		if build {
 			r, err := man.Build()
@@ -107,6 +113,9 @@ func New(log logr.Logger) *cobra.Command {
 			pushed, err = man.Push(files, branch)
 			if err != nil {
 				return err
+			}
+			if base == branch {
+				return nil
 			}
 		}
 		if pr && pushed {
