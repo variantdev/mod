@@ -22,6 +22,7 @@ import (
 	"k8s.io/klog/klogr"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -45,10 +46,11 @@ type ParametersSpec struct {
 }
 
 type ProvisionersSpec struct {
-	Files       map[string]FileSpec        `yaml:"files"`
-	Executables execversionmanager.Config  `yaml:",inline"`
-	TextReplace map[string]TextReplaceSpec `yaml:"textReplace"`
-	YamlPatch   map[string][]YamlPatchSpec `yaml:"yamlPatch"`
+	Files         map[string]FileSpec          `yaml:"files"`
+	Executables   execversionmanager.Config    `yaml:",inline"`
+	TextReplace   map[string]TextReplaceSpec   `yaml:"textReplace"`
+	RegexpReplace map[string]RegexpReplaceSpec `yaml:"regexpReplace"`
+	YamlPatch     map[string][]YamlPatchSpec   `yaml:"yamlPatch"`
 }
 
 type FileSpec struct {
@@ -57,6 +59,11 @@ type FileSpec struct {
 }
 
 type TextReplaceSpec struct {
+	From string `yaml:"from"`
+	To   string `yaml:"to"`
+}
+
+type RegexpReplaceSpec struct {
 	From string `yaml:"from"`
 	To   string `yaml:"to"`
 }
@@ -492,6 +499,16 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		files = append(files, f)
 	}
 
+	regexpReplaces := []RegexpReplace{}
+	for path, tspec := range spec.Provisioners.RegexpReplace {
+		t := RegexpReplace{
+			Path: path,
+			From: tspec.From,
+			To:   tspec.To,
+		}
+		regexpReplaces = append(regexpReplaces, t)
+	}
+
 	textReplaces := []TextReplace{}
 	for path, tspec := range spec.Provisioners.TextReplace {
 		t := TextReplace{
@@ -554,6 +571,7 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		Values:          vals,
 		ValuesSchema:    schema,
 		Files:           files,
+		RegexpReplaces:  regexpReplaces,
 		TextReplaces:    textReplaces,
 		Yamls:           yamls,
 		Executable:      execset,
@@ -670,7 +688,7 @@ func (m *ModuleManager) PullRequest(title, body, base, head string, skipDuplicat
 	owner := ownerRepo[0]
 	repo := ownerRepo[1]
 
-	b, err:= tmpl.Render("body", body, mod.Values)
+	b, err := tmpl.Render("body", body, mod.Values)
 	if err != nil {
 		return err
 	}
@@ -990,6 +1008,49 @@ func (m *ModuleManager) doBuildSingle(mod *Module) (r *BuildResult, err error) {
 		str := strings.ReplaceAll(string(contents), from, to)
 
 		if err := m.fs.WriteFile(target, []byte(str), 0644); err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+
+		r.Files = append(r.Files, t.Path)
+	}
+
+	for _, t := range mod.RegexpReplaces {
+		from, err := regexp.Compile(t.From)
+		if err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+
+		to, err := tmpl.Render("to", t.To, values)
+		if err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+
+		to = strings.TrimSpace(to)
+
+		path, err := tmpl.Render("path", t.Path, values)
+		if err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+
+		target := filepath.Join(m.AbsWorkDir, path)
+		m.Logger.V(1).Info("regexpReplace", "path", target, "from", from, "to", to)
+		contents, err := m.fs.ReadFile(target)
+		if err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+
+		res, err := regexpReplace(contents, from, to)
+		if err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+
+		if err := m.fs.WriteFile(target, res, 0644); err != nil {
 			m.Logger.V(1).Info(err.Error())
 			return nil, err
 		}

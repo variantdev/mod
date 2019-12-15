@@ -815,3 +815,126 @@ nodeGroups:
 	}
 
 }
+
+
+func TestDependencyLockinge_Dockerfile_RegexpReplace(t *testing.T) {
+	if testing.Verbose() {
+	}
+
+	files := map[string]interface{}{
+		"/path/to/variant.mod": `
+name: myapp
+
+provisioners:
+  regexpReplace:
+    Dockerfile:
+      from: "(FROM helmfile:)(\\S+)(\\s+)"
+      to: "${1}{{.Dependencies.helmfile.version}}${3}"
+
+dependencies:
+  helmfile:
+    releasesFrom:
+      exec:
+        command: go
+        args:
+        - run
+        - main.go
+    version: "> 0.94.0"
+`,
+		"/path/to/Dockerfile": `FROM helmfile:0.94.0
+
+RUN echo hello
+`,
+		"/path/to/variant.lock": `
+dependencies:
+  helmfile:
+    version: "0.94.1"
+`,
+	}
+	fs, clean, err := vfst.NewTestFS(files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer clean()
+	log := klogr.New()
+	klog.SetOutput(os.Stderr)
+	klog.V(2).Info(fmt.Sprintf("temp dir: %v", fs.TempDir()))
+
+	expectedInput := cmdsite.NewInput("go", []string{"run", "main.go"}, map[string]string{})
+	expectedStdout := `0.94.1
+0.95.0
+`
+	cmdr := cmdsite.NewTester(map[cmdsite.CommandInput]cmdsite.CommandOutput{
+		expectedInput: {Stdout: expectedStdout},
+	})
+
+	man, err := New(Logger(log), FS(fs), WD("/path/to"), GoGetterWD(filepath.Join(fs.TempDir(), "path", "to")), Commander(cmdr))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mod, err := man.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := man.doBuild(mod); err != nil {
+		t.Fatal(err)
+	}
+
+	dockerfile1Expected := `FROM helmfile:0.94.1
+
+RUN echo hello
+`
+	dockerfile1Actual, err := fs.ReadFile("/path/to/Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(dockerfile1Actual) != dockerfile1Expected {
+		t.Errorf("assertion failed: expected=%s, got=%s", dockerfile1Expected, string(dockerfile1Actual))
+	}
+
+	upMod, err := man.doUp()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := man.lock(upMod); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	lockActual, err := fs.ReadFile("/path/to/variant.lock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockExpected := `dependencies:
+  helmfile:
+    version: 0.95.0
+    previousVersion: 0.94.1
+`
+	if string(lockActual) != lockExpected {
+		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
+	}
+
+	mod2, err := man.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := man.doBuild(mod2); err != nil {
+		t.Fatal(err)
+	}
+
+	dockerfile2Expected := `FROM helmfile:0.95.0
+
+RUN echo hello
+`
+	dockerfile2Actual, err := fs.ReadFile("/path/to/Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(dockerfile2Actual) != dockerfile2Expected {
+		t.Errorf("assertion failed: expected=%s, got=%s", dockerfile2Expected, string(dockerfile2Actual))
+	}
+
+}

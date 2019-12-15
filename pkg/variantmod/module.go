@@ -13,11 +13,12 @@ type Values map[string]interface{}
 type Module struct {
 	Alias string
 
-	Values       Values
-	ValuesSchema Values
-	Files        []File
-	TextReplaces []TextReplace
-	Yamls        []YamlPatch
+	Values         Values
+	ValuesSchema   Values
+	Files          []File
+	TextReplaces   []TextReplace
+	RegexpReplaces []RegexpReplace
+	Yamls          []YamlPatch
 
 	ReleaseChannel *releasetracker.Tracker
 	Executable     *execversionmanager.ExecVM
@@ -30,7 +31,7 @@ type Module struct {
 
 type ModVersionLock struct {
 	Dependencies map[string]DepVersionLock `yaml:"dependencies"`
-	RawLock string `yaml:"-"`
+	RawLock      string                    `yaml:"-"`
 }
 
 type DepVersionLock struct {
@@ -61,6 +62,11 @@ type File struct {
 }
 
 type TextReplace struct {
+	Path     string
+	From, To string
+}
+
+type RegexpReplace struct {
 	Path     string
 	From, To string
 }

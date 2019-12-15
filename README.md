@@ -114,6 +114,35 @@ Navigate to the following examples to see practical usage of `mod`:
 
 ## API Reference
 
+## `regexpReplace` provisioner
+
+`regexpReplace` updates any text file like Dockerfile with regular expressions.
+
+Let's say you want to automate updating the base image of the below Dockerfile:
+
+```
+FROM helmfile:0.94.0
+
+RUN echo hello
+```
+
+You can write a `variant.mod` file like the below so that `mod` knows where is the image tag to be updated:
+
+```yaml
+provisioners:
+  regexpReplace:
+    Dockerfile:
+      from: "(FROM helmfile:)(\\S+)(\\s+)"
+      to: "${1}{{.Dependencies.helmfile.version}}${3}"
+
+dependencies:
+  helmfile:
+    releasesFrom:
+      dockerImageTags:
+        source: quay.io/roboll/helmfile
+    version: "> 0.94.0"
+```
+
 ### `docker` executable provisioner
 
 Setting `provisioners.executables.NAME.platforms[].docker` allows you to run `mod exec -- NAME $args` where the executable is backed by a docker image which is managed by `mod`.
