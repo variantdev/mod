@@ -42,13 +42,13 @@ type GitTags struct {
 }
 
 type GitHubTags struct {
-	Host   string `hcl:"host,attr"`
-	Source string `hcl:"source,attr"`
+	Host   *string `hcl:"host,attr"`
+	Source string  `hcl:"source,attr"`
 }
 
 type GitHubReleases struct {
-	Host   string `hcl:"host,attr"`
-	Source string `hcl:"source,attr"`
+	Host   *string `hcl:"host,attr"`
+	Source string  `hcl:"source,attr"`
 }
 
 type DockerImageTags struct {

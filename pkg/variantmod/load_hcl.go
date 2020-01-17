@@ -60,8 +60,12 @@ func appToModule(app *hclconf.App) (*confapi.Module, error) {
 			if err := gohcl.DecodeBody(d.BodyForType, &hcl.EvalContext{}, &e); err != nil {
 				return nil, err
 			}
+			var host string
+			if e.Host != nil {
+				host = *e.Host
+			}
 			provider.GitHubTags = confapi.GitHubTags{
-				Host:   e.Host,
+				Host:   host,
 				Source: func(_ map[string]interface{}) (string, error) {
 					return e.Source, nil
 				},
@@ -71,8 +75,12 @@ func appToModule(app *hclconf.App) (*confapi.Module, error) {
 			if err := gohcl.DecodeBody(d.BodyForType, &hcl.EvalContext{}, &e); err != nil {
 				return nil, err
 			}
+			var host string
+			if e.Host != nil {
+				host = *e.Host
+			}
 			provider.GitHubReleases = confapi.GitHubReleases{
-				Host:   e.Host,
+				Host:   host,
 				Source: func(_ map[string]interface{}) (string, error) {
 					return e.Source, nil
 				},
