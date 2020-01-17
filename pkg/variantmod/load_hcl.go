@@ -45,7 +45,7 @@ func appToModule(app *hclconf.App) (*confapi.Module, error) {
 				Command: e.Command,
 				Args:    e.Args,
 			}
-		case "git_tags":
+		case "git_tag":
 			var e hclconf.GitTags
 			if err := gohcl.DecodeBody(d.BodyForType, &hcl.EvalContext{}, &e); err != nil {
 				return nil, err
@@ -55,7 +55,7 @@ func appToModule(app *hclconf.App) (*confapi.Module, error) {
 					return e.Source, nil
 				},
 			}
-		case "github_tags":
+		case "github_tag":
 			var e hclconf.GitHubTags
 			if err := gohcl.DecodeBody(d.BodyForType, &hcl.EvalContext{}, &e); err != nil {
 				return nil, err
@@ -66,7 +66,7 @@ func appToModule(app *hclconf.App) (*confapi.Module, error) {
 					return e.Source, nil
 				},
 			}
-		case "github_releases":
+		case "github_release":
 			var e hclconf.GitHubReleases
 			if err := gohcl.DecodeBody(d.BodyForType, &hcl.EvalContext{}, &e); err != nil {
 				return nil, err
@@ -77,7 +77,7 @@ func appToModule(app *hclconf.App) (*confapi.Module, error) {
 					return e.Source, nil
 				},
 			}
-		case "docker_tags":
+		case "docker_tag":
 			var e hclconf.DockerImageTags
 			if err := gohcl.DecodeBody(d.BodyForType, &hcl.EvalContext{}, &e); err != nil {
 				return nil, err
