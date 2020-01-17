@@ -2,10 +2,12 @@ package variantmod
 
 import (
 	"fmt"
+	"io"
+
 	"github.com/variantdev/mod/pkg/cmdsite"
+	"github.com/variantdev/mod/pkg/config/confapi"
 	"github.com/variantdev/mod/pkg/execversionmanager"
 	"github.com/variantdev/mod/pkg/releasetracker"
-	"io"
 )
 
 type Values map[string]interface{}
@@ -15,10 +17,10 @@ type Module struct {
 
 	Values         Values
 	ValuesSchema   Values
-	Files          []File
-	TextReplaces   []TextReplace
-	RegexpReplaces []RegexpReplace
-	Yamls          []YamlPatch
+	Files          []confapi.File
+	TextReplaces   []confapi.TextReplace
+	RegexpReplaces []confapi.RegexpReplace
+	Yamls          []confapi.YamlPatch
 
 	ReleaseChannel *releasetracker.Tracker
 	Executable     *execversionmanager.ExecVM
@@ -26,61 +28,7 @@ type Module struct {
 	Submodules      map[string]*Module
 	ReleaseTrackers map[string]*releasetracker.Tracker
 
-	VersionLock ModVersionLock
-}
-
-type ModVersionLock struct {
-	Dependencies map[string]DepVersionLock `yaml:"dependencies"`
-	RawLock      string                    `yaml:"-"`
-}
-
-type DepVersionLock struct {
-	Version         string `yaml:"version"`
-	PreviousVersion string `yaml:"previousVersion,omitempty"`
-}
-
-func (l ModVersionLock) ToMap() map[string]interface{} {
-	return map[string]interface{}{"Dependencies": l.ToDepsMap(), "RawLock": l.RawLock}
-}
-
-func (l ModVersionLock) ToDepsMap() map[string]interface{} {
-	deps := map[string]interface{}{}
-	for k, v := range l.Dependencies {
-		m := map[string]interface{}{"version": v.Version}
-		if v.PreviousVersion != "" {
-			m["previousVersion"] = v.PreviousVersion
-		}
-		deps[k] = m
-	}
-	return deps
-}
-
-type File struct {
-	Path      string
-	Source    string
-	Arguments map[string]interface{}
-}
-
-type TextReplace struct {
-	Path     string
-	From, To string
-}
-
-type RegexpReplace struct {
-	Path     string
-	From, To string
-}
-
-type YamlPatch struct {
-	Path    string
-	Patches []Patch
-}
-
-type Patch struct {
-	Op    string      `json:"op"`
-	Path  string      `json:"path"`
-	Value interface{} `json:"value"`
-	From  string      `json:"from"`
+	VersionLock confapi.ModVersionLock
 }
 
 func merge(src, dst map[string]struct{}) {
@@ -98,7 +46,7 @@ func (m *Module) Walk(f func(*Module) error) error {
 	return f(m)
 }
 
-func (m *Module) Dirs() (map[string]struct{}, error) {
+func (m *Module) getDirs() (map[string]struct{}, error) {
 	dirs := map[string]struct{}{}
 
 	if err := m.Walk(func(dep *Module) error {
@@ -116,7 +64,7 @@ func (m *Module) Dirs() (map[string]struct{}, error) {
 }
 
 func (m *Module) Shell() (*cmdsite.CommandSite, error) {
-	dirs, err := m.Dirs()
+	dirs, err := m.getDirs()
 	if err != nil {
 		return nil, err
 	}

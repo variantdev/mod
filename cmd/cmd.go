@@ -15,10 +15,12 @@ import (
 )
 
 func New(log logr.Logger) *cobra.Command {
+	var newVariantMod func() (*variantmod.ModuleManager, error)
+
 	cmd := cobra.Command{
 		Use: "mod",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			mod, err := variantmod.New(variantmod.Logger(log))
+			mod, err := newVariantMod()
 			if err != nil {
 				return err
 			}
@@ -27,10 +29,22 @@ func New(log logr.Logger) *cobra.Command {
 		},
 	}
 
+	{
+		file := cmd.PersistentFlags().StringP("file", "f", "variant.mod", "Configuration file to load")
+
+		newVariantMod = func() (*variantmod.ModuleManager, error) {
+			return variantmod.New(
+				variantmod.File(*file),
+				variantmod.Logger(log),
+				variantmod.Commander(cmdsite.DefaultRunCommand),
+			)
+		}
+	}
+
 	modbuild := &cobra.Command{
 		Use: "build",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			mod, err := variantmod.New(variantmod.Logger(log))
+			mod, err := newVariantMod()
 			if err != nil {
 				return err
 			}
@@ -42,15 +56,11 @@ func New(log logr.Logger) *cobra.Command {
 	modexec := &cobra.Command{
 		Use: "exec",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			man, err := variantmod.New(variantmod.Logger(log))
+			man, err := newVariantMod()
 			if err != nil {
 				return err
 			}
-			mod, err := man.Load()
-			if err != nil {
-				return err
-			}
-			sh, err := mod.Shell()
+			sh, err := man.Shell()
 			if err != nil {
 				return err
 			}
@@ -62,15 +72,11 @@ func New(log logr.Logger) *cobra.Command {
 		Use:  "list-dependency-versions",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			man, err := variantmod.New(variantmod.Logger(log))
+			man, err := newVariantMod()
 			if err != nil {
 				return err
 			}
-			mod, err := man.Load()
-			if err != nil {
-				return err
-			}
-			return mod.ListVersions(args[0], os.Stdout)
+			return man.ListVersions(args[0], os.Stdout)
 		},
 	}
 
@@ -78,10 +84,7 @@ func New(log logr.Logger) *cobra.Command {
 		if pr {
 			push = true
 		}
-		man, err := variantmod.New(
-			variantmod.Logger(log),
-			variantmod.Commander(cmdsite.DefaultRunCommand),
-		)
+		man, err := newVariantMod()
 		if err != nil {
 			return err
 		}
@@ -157,7 +160,7 @@ func New(log logr.Logger) *cobra.Command {
 			RunE: func(cmd *cobra.Command, args []string) error {
 				templateRepo := args[0]
 				newRepo := args[1]
-				man, err := variantmod.New(variantmod.Logger(log))
+				man, err := newVariantMod()
 				if err != nil {
 					return err
 				}
@@ -185,7 +188,7 @@ func New(log logr.Logger) *cobra.Command {
 	modprovision := &cobra.Command{
 		Use: "provision",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			man, err := variantmod.New(variantmod.Logger(log))
+			man, err := newVariantMod()
 			if err != nil {
 				return err
 			}

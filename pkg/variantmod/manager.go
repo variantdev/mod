@@ -3,16 +3,21 @@ package variantmod
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+
 	"github.com/go-logr/logr"
 	"github.com/twpayne/go-vfs"
 	"github.com/variantdev/mod/pkg/cmdsite"
+	"github.com/variantdev/mod/pkg/config/confapi"
 	"github.com/variantdev/mod/pkg/depresolver"
 	"github.com/variantdev/mod/pkg/execversionmanager"
 	"github.com/variantdev/mod/pkg/gitops"
 	"github.com/variantdev/mod/pkg/gitrepo"
-	"github.com/variantdev/mod/pkg/maputil"
 	"github.com/variantdev/mod/pkg/releasetracker"
 	"github.com/variantdev/mod/pkg/tmpl"
 	"github.com/variantdev/mod/pkg/yamlpatch"
@@ -20,77 +25,14 @@ import (
 	"gopkg.in/yaml.v3"
 	"k8s.io/klog"
 	"k8s.io/klog/klogr"
-	"os"
-	"path/filepath"
-	"regexp"
-	"strings"
 )
-
-const (
-	ModuleFileName = "variant.mod"
-	LockFileName   = "variant.lock"
-)
-
-type ModuleSpec struct {
-	Name string `yaml:"name"`
-
-	Parameters   ParametersSpec                 `yaml:"parameters"`
-	Provisioners ProvisionersSpec               `yaml:"provisioners"`
-	Dependencies map[string]DependencySpec      `yaml:"dependencies"`
-	Releases     map[string]releasetracker.Spec `yaml:"releases"`
-}
-
-type ParametersSpec struct {
-	Schema   map[string]interface{} `yaml:"schema"`
-	Defaults map[string]interface{} `yaml:"defaults"`
-}
-
-type ProvisionersSpec struct {
-	Files         map[string]FileSpec          `yaml:"files"`
-	Executables   execversionmanager.Config    `yaml:",inline"`
-	TextReplace   map[string]TextReplaceSpec   `yaml:"textReplace"`
-	RegexpReplace map[string]RegexpReplaceSpec `yaml:"regexpReplace"`
-	YamlPatch     map[string][]YamlPatchSpec   `yaml:"yamlPatch"`
-}
-
-type FileSpec struct {
-	Source    string                 `yaml:"source"`
-	Arguments map[string]interface{} `yaml:"arguments"`
-}
-
-type TextReplaceSpec struct {
-	From string `yaml:"from"`
-	To   string `yaml:"to"`
-}
-
-type RegexpReplaceSpec struct {
-	From string `yaml:"from"`
-	To   string `yaml:"to"`
-}
-
-type YamlPatchSpec struct {
-	Op    string      `yaml:"op"`
-	Path  string      `yaml:"path"`
-	Value interface{} `yaml:"value"`
-	From  string      `yaml:"string"`
-}
-
-type DependencySpec struct {
-	ReleasesFrom releasetracker.VersionsFrom `yaml:"releasesFrom""`
-
-	Source string `yaml:"source"`
-	Kind   string `yaml:"kind"`
-	// VersionConstraint is the version range for this dependency. Works only for modules hosted on Git or GitHub
-	VersionConstraint string                 `yaml:"version"`
-	Arguments         map[string]interface{} `yaml:"arguments"`
-
-	Alias          string
-	LockedVersions ModVersionLock
-
-	ForceUpdate bool
-}
 
 type ModuleManager struct {
+	ModuleFile string
+	LockFile   string
+
+	load func(lock confapi.ModVersionLock) (*Module, error)
+
 	fs   vfs.FS
 	cmdr cmdsite.RunCommand
 
@@ -105,89 +47,46 @@ type ModuleManager struct {
 	dep *depresolver.Resolver
 }
 
-type Parameter struct {
-	Name     string
-	Default  interface{}
-	Type     string
-	Required []string
-}
-
-type Option interface {
-	SetOption(r *ModuleManager) error
-}
-
-func Logger(logger logr.Logger) Option {
-	return &loggerOption{l: logger}
-}
-
-type loggerOption struct {
-	l logr.Logger
-}
-
-func (s *loggerOption) SetOption(r *ModuleManager) error {
-	r.Logger = s.l
-	return nil
-}
-
-func FS(fs vfs.FS) Option {
-	return &fsOption{f: fs}
-}
-
-type fsOption struct {
-	f vfs.FS
-}
-
-func (s *fsOption) SetOption(r *ModuleManager) error {
-	r.fs = s.f
-	return nil
-}
-
-func Commander(cmdr cmdsite.RunCommand) Option {
-	return &cmdrOption{cmdr: cmdr}
-}
-
-type cmdrOption struct {
-	cmdr cmdsite.RunCommand
-}
-
-func (s *cmdrOption) SetOption(r *ModuleManager) error {
-	r.cmdr = s.cmdr
-	return nil
-}
-
-func WD(wd string) Option {
-	return &wdOption{d: wd}
-}
-
-type wdOption struct {
-	d string
-}
-
-func (s *wdOption) SetOption(r *ModuleManager) error {
-	r.AbsWorkDir = s.d
-	return nil
-}
-
-func GoGetterWD(goGetterWD string) Option {
-	return &goGetterWDOption{d: goGetterWD}
-}
-
-type goGetterWDOption struct {
-	d string
-}
-
-func (s *goGetterWDOption) SetOption(r *ModuleManager) error {
-	r.goGetterAbsWorkDir = s.d
-	return nil
-}
+const (
+	ModuleFileName = "variant.mod"
+	LockFileName   = "variant.lock"
+)
 
 func New(opts ...Option) (*ModuleManager, error) {
-	mod := &ModuleManager{}
+	man := &ModuleManager{
+	}
 
+	man, err := initModuleManager(man, opts...)
+	if err != nil {
+		return nil, err
+	}
+
+	man.load = func(lock confapi.ModVersionLock) (*Module, error) {
+		spec := confapi.ModuleParams{
+			Source:         filepath.Join(man.AbsWorkDir, man.ModuleFile),
+			Arguments:      map[string]interface{}{},
+			LockedVersions: lock,
+		}
+
+		return man.loadModule(spec)
+	}
+
+	return man, nil
+}
+
+func initModuleManager(mod *ModuleManager, opts ...Option) (*ModuleManager, error) {
 	for _, o := range opts {
 		if err := o.SetOption(mod); err != nil {
 			return nil, err
 		}
+	}
+
+	if mod.ModuleFile == "" {
+		mod.ModuleFile = ModuleFileName
+	}
+
+	if mod.LockFile == "" {
+		mod.LockFile = LockFileName
 	}
 
 	if mod.Logger == nil {
@@ -248,8 +147,8 @@ func New(opts ...Option) (*ModuleManager, error) {
 	return mod, nil
 }
 
-func (m *ModuleManager) LoadLockFile() (*ModVersionLock, error) {
-	bytes, err := m.fs.ReadFile(filepath.Join(m.AbsWorkDir, LockFileName))
+func (m *ModuleManager) loadLockFile(path string) (*confapi.ModVersionLock, error) {
+	bytes, err := m.fs.ReadFile(filepath.Join(m.AbsWorkDir, path))
 	if err != nil {
 		m.Logger.V(2).Info("load.readfile", "err", err.Error())
 		if !strings.HasSuffix(err.Error(), "no such file or directory") {
@@ -257,7 +156,7 @@ func (m *ModuleManager) LoadLockFile() (*ModVersionLock, error) {
 		}
 	}
 
-	lockContents := ModVersionLock{Dependencies: map[string]DepVersionLock{}, RawLock: string(bytes)}
+	lockContents := confapi.ModVersionLock{Dependencies: map[string]confapi.DepVersionLock{}, RawLock: string(bytes)}
 	if bytes != nil {
 		m.Logger.V(2).Info("load.yaml.unmarshal.begin", "bytes", string(bytes))
 		if err := yaml.Unmarshal(bytes, &lockContents); err != nil {
@@ -272,25 +171,38 @@ func (m *ModuleManager) LoadLockFile() (*ModVersionLock, error) {
 }
 
 func (m *ModuleManager) Enabled() bool {
-	_, err := m.fs.ReadFile(ModuleFileName)
+	_, err := m.load(confapi.ModVersionLock{
+		Dependencies: map[string]confapi.DepVersionLock{},
+		RawLock:      "",
+	})
 	return err == nil
 }
 
-func (m *ModuleManager) Load() (*Module, error) {
-	lockContents, err := m.LoadLockFile()
+func (m *ModuleManager) ListVersions(depName string, out io.Writer) error {
+	mod, err := m.loadLockAndModule()
+	if err != nil {
+		return err
+	}
+	return mod.ListVersions(depName, out)
+}
+
+func (m *ModuleManager) Shell() (*cmdsite.CommandSite, error) {
+	mod, err := m.loadLockAndModule()
+	if err != nil {
+		return nil, err
+	}
+	return mod.Shell()
+}
+
+func (m *ModuleManager) loadLockAndModule() (*Module, error) {
+	lockContents, err := m.loadLockFile(m.LockFile)
 	if err != nil {
 		return nil, err
 	}
 
-	spec := DependencySpec{
-		Source:         filepath.Join(m.AbsWorkDir, ModuleFileName),
-		Arguments:      map[string]interface{}{},
-		LockedVersions: *lockContents,
-	}
+	m.Logger.V(2).Info("load.begin")
 
-	m.Logger.V(2).Info("load.begin", "spec", spec)
-
-	mod, err := m.load(spec)
+	mod, err := m.load(*lockContents)
 	if err != nil {
 		return nil, err
 	}
@@ -300,72 +212,77 @@ func (m *ModuleManager) Load() (*Module, error) {
 	return mod, nil
 }
 
-func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
+func (m *ModuleManager) loadModule(params confapi.ModuleParams) (mod *Module, err error) {
 	defer func() {
 		if err != nil {
-			m.Logger.Error(err, "load", "depspec", depspec)
+			m.Logger.Error(err, "loadModule", "params", params)
 		}
 	}()
 
-	resolved, err := m.dep.Resolve(depspec.Source)
+	matched := strings.HasSuffix(params.Source, ".variantmod")
+	var conf *confapi.Module
+	if matched {
+		conf, err = m.loadHclModule(params)
+	} else {
+		conf, err = m.loadYamlModule(params)
+	}
 	if err != nil {
 		return nil, err
 	}
 
-	if !filepath.IsAbs(resolved) {
-		resolved = filepath.Join(m.AbsWorkDir, resolved)
-	}
+	return m.initModule(params, *conf)
+}
 
-	if filepath.Base(resolved) != "variant.mod" {
-		resolved = filepath.Join(resolved, "variant.mod")
-	}
+func (m *ModuleManager) initModule(params confapi.ModuleParams, mod confapi.Module) (*Module, error) {
+	vals := mergeByOverwrite(Values{}, mod.Defaults, params.Arguments, params.LockedVersions.ToMap())
 
-	bytes, err := m.fs.ReadFile(resolved)
-	if err != nil {
-		m.Logger.Error(err, "read file", "resolved", resolved, "depspec", depspec)
-		var err2 error
-		bytes, err2 = m.fs.ReadFile(resolved)
-		if err2 != nil {
-			return nil, err2
-		}
-	}
-
-	spec := &ModuleSpec{
-		Name: "variant",
-		Parameters: ParametersSpec{
-			Schema:   map[string]interface{}{},
-			Defaults: map[string]interface{}{},
-		},
-		Releases: map[string]releasetracker.Spec{},
-	}
-	if err := yaml.Unmarshal(bytes, spec); err != nil {
-		return nil, err
-	}
-	m.Logger.V(2).Info("load", "alias", depspec.Alias, "module", spec, "dep", depspec)
-
-	defaults, err := maputil.CastKeysToStrings(spec.Parameters.Defaults)
-	if err != nil {
-		return nil, err
-	}
-
-	vals := mergeByOverwrite(Values{}, defaults, depspec.Arguments, depspec.LockedVersions.ToMap())
+	verLock := params.LockedVersions
 
 	trackers := map[string]*releasetracker.Tracker{}
 
-	for n, dep := range spec.Dependencies {
-		if dep.ReleasesFrom.IsDefined() {
-			_, conflicted := spec.Releases[n]
-			if conflicted {
-				return nil, fmt.Errorf("conflicting dependency %q", n)
-			}
-			spec.Releases[n] = releasetracker.Spec{VersionsFrom: dep.ReleasesFrom}
-		}
-	}
+	for alias, dep := range mod.Releases {
+		var r releasetracker.Spec
 
-	for alias, dep := range spec.Releases {
+		var err error
+		r.VersionsFrom.Exec.Args = dep.VersionsFrom.Exec.Args
+		r.VersionsFrom.Exec.Command = dep.VersionsFrom.Exec.Command
+		if dep.VersionsFrom.DockerImageTags.Source != nil {
+			r.VersionsFrom.DockerImageTags.Source, err = dep.VersionsFrom.DockerImageTags.Source(vals)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if dep.VersionsFrom.GitHubReleases.Source != nil {
+			r.VersionsFrom.GitHubReleases.Source, err = dep.VersionsFrom.GitHubReleases.Source(vals)
+			if err != nil {
+				return nil, err
+			}
+			r.VersionsFrom.GitHubReleases.Host = dep.VersionsFrom.GitHubReleases.Host
+		}
+		if dep.VersionsFrom.GitHubTags.Source != nil {
+			r.VersionsFrom.GitHubTags.Source, err = dep.VersionsFrom.GitHubTags.Source(vals)
+			if err != nil {
+				return nil, err
+			}
+			r.VersionsFrom.GitHubTags.Host = dep.VersionsFrom.GitHubTags.Host
+		}
+		if dep.VersionsFrom.GitTags.Source != nil {
+			r.VersionsFrom.GitTags.Source, err = dep.VersionsFrom.GitTags.Source(vals)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if dep.VersionsFrom.JSONPath.Source != nil {
+			r.VersionsFrom.JSONPath.Source, err = dep.VersionsFrom.JSONPath.Source(vals)
+			if err != nil {
+				return nil, err
+			}
+			r.VersionsFrom.JSONPath.Description = dep.VersionsFrom.JSONPath.Description
+			r.VersionsFrom.JSONPath.Versions = dep.VersionsFrom.JSONPath.Versions
+		}
 		var rc *releasetracker.Tracker
 		rc, err = releasetracker.New(
-			dep,
+			r,
 			releasetracker.WD(m.AbsWorkDir),
 			releasetracker.GoGetterWD(m.goGetterAbsWorkDir),
 			releasetracker.FS(m.fs),
@@ -375,38 +292,16 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 			return nil, err
 		}
 
-		rc.Spec.VersionsFrom.JSONPath.Source, err = tmpl.Render("releaseChannel.source", rc.Spec.VersionsFrom.JSONPath.Source, vals)
-		if err != nil {
-			return nil, err
-		}
-
-		rc.Spec.VersionsFrom.GitTags.Source, err = tmpl.Render("releaseChannel.source", rc.Spec.VersionsFrom.GitTags.Source, vals)
-		if err != nil {
-			return nil, err
-		}
-
-		rc.Spec.VersionsFrom.GitHubReleases.Source, err = tmpl.Render("releaseChannel.source", rc.Spec.VersionsFrom.GitHubReleases.Source, vals)
-		if err != nil {
-			return nil, err
-		}
-
-		rc.Spec.VersionsFrom.DockerImageTags.Source, err = tmpl.Render("releaseChannel.source", rc.Spec.VersionsFrom.DockerImageTags.Source, vals)
-		if err != nil {
-			return nil, err
-		}
-
 		trackers[alias] = rc
 	}
-
-	verLock := depspec.LockedVersions
 
 	submods := map[string]*Module{}
 
 	// Resolve versions of dependencies
-	for alias, dep := range spec.Dependencies {
+	for alias, dep := range mod.Dependencies {
 		preUp, ok := verLock.Dependencies[alias]
 		if ok {
-			if depspec.ForceUpdate {
+			if params.ForceUpdate {
 				m.Logger.V(2).Info("finding tracker", "alias", alias, "trackers", trackers)
 				tracker, ok := trackers[alias]
 				if ok {
@@ -424,7 +319,7 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 					prev := verLock.Dependencies[alias].Version
 					vals[alias] = Values{"version": rel.Version, "previousVersion": prev}
 
-					verLock.Dependencies[alias] = DepVersionLock{
+					verLock.Dependencies[alias] = confapi.DepVersionLock{
 						Version:         rel.Version,
 						PreviousVersion: prev,
 					}
@@ -445,7 +340,7 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 				}
 				vals[alias] = Values{"version": rel.Version}
 
-				verLock.Dependencies[alias] = DepVersionLock{Version: rel.Version}
+				verLock.Dependencies[alias] = confapi.DepVersionLock{Version: rel.Version}
 			} else {
 				m.Logger.V(2).Info("no tracker found", "alias", alias)
 			}
@@ -453,10 +348,10 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 	}
 
 	// Regenerate template parameters from the up-to-date versions of dependencies
-	vals = mergeByOverwrite(Values{}, defaults, depspec.Arguments, verLock.ToDepsMap(), verLock.ToMap())
+	vals = mergeByOverwrite(Values{}, mod.Defaults, params.Arguments, verLock.ToDepsMap(), verLock.ToMap())
 
 	// Load sub-modules
-	for alias, dep := range spec.Dependencies {
+	for alias, dep := range mod.Dependencies {
 		if dep.Kind != "Module" {
 			continue
 		}
@@ -464,20 +359,23 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		dep.Alias = alias
 
 		if dep.LockedVersions.Dependencies == nil {
-			dep.LockedVersions.Dependencies = map[string]DepVersionLock{}
+			dep.LockedVersions.Dependencies = map[string]confapi.DepVersionLock{}
 		}
 
-		args, err := maputil.CastKeysToStrings(dep.Arguments)
-		if err != nil {
-			return nil, err
-		}
-		dep.Arguments, err = tmpl.RenderArgs(args, vals)
+		args, err := dep.Arguments(vals)
 		if err != nil {
 			m.Logger.V(2).Info("renderargs failed with values", "vals", vals)
 			return nil, err
 		}
 		m.Logger.V(2).Info("loading dependency", "alias", alias, "dep", dep)
-		submod, err := m.load(dep)
+		ps := confapi.ModuleParams{
+			Source:         dep.Source,
+			Arguments:      args,
+			Alias:          dep.Alias,
+			LockedVersions: dep.LockedVersions,
+			ForceUpdate:    dep.ForceUpdate,
+		}
+		submod, err := m.loadModule(ps)
 		if err != nil {
 			return nil, err
 		}
@@ -489,59 +387,33 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		m.Logger.V(1).Info("loaded dependency", "alias", alias, "vals", vals)
 	}
 
-	files := []File{}
-	for path, fspec := range spec.Provisioners.Files {
-		f := File{
-			Path:      path,
-			Source:    fspec.Source,
-			Arguments: fspec.Arguments,
-		}
-		files = append(files, f)
-	}
-
-	regexpReplaces := []RegexpReplace{}
-	for path, tspec := range spec.Provisioners.RegexpReplace {
-		t := RegexpReplace{
-			Path: path,
-			From: tspec.From,
-			To:   tspec.To,
-		}
-		regexpReplaces = append(regexpReplaces, t)
-	}
-
-	textReplaces := []TextReplace{}
-	for path, tspec := range spec.Provisioners.TextReplace {
-		t := TextReplace{
-			Path: path,
-			From: tspec.From,
-			To:   tspec.To,
-		}
-		textReplaces = append(textReplaces, t)
-	}
-
-	yamls := []YamlPatch{}
-	for path, yspec := range spec.Provisioners.YamlPatch {
-		patches := []Patch{}
-		for _, v := range yspec {
-			p := Patch{
-				Op:    v.Op,
-				Path:  v.Path,
-				Value: v.Value,
-				From:  v.From,
+	execs := map[string]execversionmanager.Executable{}
+	for k, v := range mod.Executables {
+		var e execversionmanager.Executable
+		for _, p := range v.Platforms {
+			src, err := p.Source(vals)
+			if err != nil{
+				return nil, err
 			}
-			patches = append(patches, p)
+			docker, err := p.Docker(vals)
+			if err != nil {
+				return nil, err
+			}
+			e.Platforms = append(e.Platforms, execversionmanager.Platform{
+				Source: src,
+				Docker: *docker,
+				Selector: execversionmanager.Selector{MatchLabels: execversionmanager.MatchLabels{
+					OS:   p.Selector.MatchLabels.OS,
+					Arch: p.Selector.MatchLabels.Arch,
+				}},
+			})
 		}
-		y := YamlPatch{
-			Path:    path,
-			Patches: patches,
-		}
-		yamls = append(yamls, y)
+		execs[k] = e
 	}
-
-	spec.Parameters.Schema["type"] = "object"
-
 	execset, err := execversionmanager.New(
-		&spec.Provisioners.Executables,
+		&execversionmanager.Config{
+			Executables: execs,
+		},
 		execversionmanager.Values(vals),
 		execversionmanager.WD(m.AbsWorkDir),
 		execversionmanager.GoGetterWD(m.goGetterAbsWorkDir),
@@ -551,36 +423,19 @@ func (m *ModuleManager) load(depspec DependencySpec) (mod *Module, err error) {
 		return nil, err
 	}
 
-	schema, err := maputil.CastKeysToStrings(spec.Parameters.Schema)
-	if err != nil {
-		return nil, err
-	}
-
-	//if vals[depspec.Alias] != nil {
-	//	vs, ok := vals[depspec.Alias].(Values)
-	//	if ok {
-	//		v, set := vs["version"]
-	//		if set {
-	//			vals["version"] = v
-	//		}
-	//	}
-	//}
-	//
-	mod = &Module{
-		Alias:           spec.Name,
+	return &Module{
+		Alias:           mod.Name,
 		Values:          vals,
-		ValuesSchema:    schema,
-		Files:           files,
-		RegexpReplaces:  regexpReplaces,
-		TextReplaces:    textReplaces,
-		Yamls:           yamls,
+		ValuesSchema:    mod.ValuesSchema,
+		Files:           mod.Files,
+		RegexpReplaces:  mod.RegexpReplaces,
+		TextReplaces:    mod.TextReplaces,
+		Yamls:           mod.Yamls,
 		Executable:      execset,
 		Submodules:      submods,
 		ReleaseTrackers: trackers,
 		VersionLock:     verLock,
-	}
-
-	return mod, nil
+	}, nil
 }
 
 type BuildResult struct {
@@ -593,7 +448,7 @@ func (m *ModuleManager) GetShellIfEnabled() (*cmdsite.CommandSite, error) {
 			return nil, err
 		}
 
-		mod, err := m.Load()
+		mod, err := m.loadLockAndModule()
 		if err != nil {
 			return nil, err
 		}
@@ -605,7 +460,7 @@ func (m *ModuleManager) GetShellIfEnabled() (*cmdsite.CommandSite, error) {
 }
 
 func (m *ModuleManager) Build() (*BuildResult, error) {
-	mod, err := m.Load()
+	mod, err := m.loadLockAndModule()
 	if err != nil {
 		return nil, err
 	}
@@ -666,7 +521,7 @@ func (m *ModuleManager) Push(files []string, branch string) (bool, error) {
 }
 
 func (m *ModuleManager) PullRequest(title, body, base, head string, skipDuplicatePRBody, skipDuplicatePRTitle bool) error {
-	mod, err := m.Load()
+	mod, err := m.loadLockAndModule()
 	if err != nil {
 		return err
 	}
@@ -784,21 +639,21 @@ func (m *ModuleManager) Create(templateRepo, newRepo string, public bool) error 
 }
 
 func (m *ModuleManager) doUp() (*Module, error) {
-	lockContents, err := m.LoadLockFile()
+	lockContents, err := m.loadLockFile(m.LockFile)
 	if err != nil {
 		return nil, err
 	}
 
 	m.Logger.V(2).Info("running up")
-	spec := DependencySpec{
-		Source:    filepath.Join(m.AbsWorkDir, "variant.mod"),
+	spec := confapi.ModuleParams{
+		Source:    filepath.Join(m.AbsWorkDir, m.ModuleFile),
 		Arguments: map[string]interface{}{},
 		//LockedVersions: ModVersionLock{Dependencies: map[string]DepVersionLock{}},
 		LockedVersions: *lockContents,
 		ForceUpdate:    true,
 	}
 
-	mod, err := m.load(spec)
+	mod, err := m.loadModule(spec)
 	if err != nil {
 		return nil, err
 	}
@@ -817,7 +672,7 @@ func (m *ModuleManager) lock(mod *Module) error {
 	}
 	bytes := buf.Bytes()
 
-	writeTo := filepath.Join(m.AbsWorkDir, "variant.lock")
+	writeTo := filepath.Join(m.AbsWorkDir, m.LockFile)
 
 	m.Logger.V(2).Info("lock.write", "path", writeTo, "data", string(bytes))
 
@@ -881,7 +736,7 @@ func mergeByOverwrite(src ...Values) (res Values) {
 func (m *ModuleManager) doBuild(mod *Module) (*BuildResult, error) {
 	r := BuildResult{}
 	err := mod.Walk(func(dep *Module) error {
-		rr, err := m.doBuildSingle(dep)
+		rr, err := m.buildModule(dep)
 		if err != nil {
 			return err
 		}
@@ -896,7 +751,7 @@ func (m *ModuleManager) doBuild(mod *Module) (*BuildResult, error) {
 	return &r, nil
 }
 
-func (m *ModuleManager) doBuildSingle(mod *Module) (r *BuildResult, err error) {
+func (m *ModuleManager) buildModule(mod *Module) (r *BuildResult, err error) {
 	defer func() {
 		if err != nil {
 			m.Logger.V(0).Info("doBuild", "error", err.Error())
@@ -919,7 +774,7 @@ func (m *ModuleManager) doBuildSingle(mod *Module) (r *BuildResult, err error) {
 	}
 
 	for _, f := range mod.Files {
-		u, err := tmpl.Render("source", f.Source, values)
+		u, err := f.Source(values)
 		if err != nil {
 			m.Logger.V(1).Info(err.Error())
 			return nil, err
@@ -949,7 +804,7 @@ func (m *ModuleManager) doBuildSingle(mod *Module) (r *BuildResult, err error) {
 
 		ext := filepath.Ext(target)
 		if ext == ".tpl" || ext == ".tmpl" || ext == ".gotmpl" {
-			args, err := tmpl.RenderArgs(f.Arguments, values)
+			args, err := f.Args(values)
 			if err != nil {
 				m.Logger.V(1).Info(err.Error())
 				return nil, err
@@ -971,7 +826,7 @@ func (m *ModuleManager) doBuildSingle(mod *Module) (r *BuildResult, err error) {
 	}
 
 	for _, t := range mod.TextReplaces {
-		from, err := tmpl.Render("from", t.From, values)
+		from, err := t.From(values)
 		if err != nil {
 			m.Logger.V(1).Info(err.Error())
 			return nil, err
@@ -983,7 +838,7 @@ func (m *ModuleManager) doBuildSingle(mod *Module) (r *BuildResult, err error) {
 			continue
 		}
 
-		to, err := tmpl.Render("to", t.To, values)
+		to, err := t.To(values)
 		if err != nil {
 			m.Logger.V(1).Info(err.Error())
 			return nil, err
@@ -991,7 +846,7 @@ func (m *ModuleManager) doBuildSingle(mod *Module) (r *BuildResult, err error) {
 
 		to = strings.TrimSpace(to)
 
-		path, err := tmpl.Render("path", t.Path, values)
+		path, err := t.Path(values)
 		if err != nil {
 			m.Logger.V(1).Info(err.Error())
 			return nil, err
@@ -1012,7 +867,7 @@ func (m *ModuleManager) doBuildSingle(mod *Module) (r *BuildResult, err error) {
 			return nil, err
 		}
 
-		r.Files = append(r.Files, t.Path)
+		r.Files = append(r.Files, path)
 	}
 
 	for _, t := range mod.RegexpReplaces {
@@ -1022,7 +877,7 @@ func (m *ModuleManager) doBuildSingle(mod *Module) (r *BuildResult, err error) {
 			return nil, err
 		}
 
-		to, err := tmpl.Render("to", t.To, values)
+		to, err := t.To(values)
 		if err != nil {
 			m.Logger.V(1).Info(err.Error())
 			return nil, err
@@ -1030,7 +885,7 @@ func (m *ModuleManager) doBuildSingle(mod *Module) (r *BuildResult, err error) {
 
 		to = strings.TrimSpace(to)
 
-		path, err := tmpl.Render("path", t.Path, values)
+		path, err := t.Path(values)
 		if err != nil {
 			m.Logger.V(1).Info(err.Error())
 			return nil, err
@@ -1055,11 +910,11 @@ func (m *ModuleManager) doBuildSingle(mod *Module) (r *BuildResult, err error) {
 			return nil, err
 		}
 
-		r.Files = append(r.Files, t.Path)
+		r.Files = append(r.Files, path)
 	}
 
 	for _, y := range mod.Yamls {
-		path, err := tmpl.Render("path", y.Path, values)
+		path, err := y.Path(values)
 		if err != nil {
 			m.Logger.V(1).Info(err.Error())
 			return nil, err
@@ -1071,12 +926,7 @@ func (m *ModuleManager) doBuildSingle(mod *Module) (r *BuildResult, err error) {
 			return nil, err
 		}
 
-		out, err := json.Marshal(y.Patches)
-		if err != nil {
-			m.Logger.V(1).Info(err.Error())
-			return nil, err
-		}
-		patchJSON, err := tmpl.Render("patches", string(out), values)
+		patchJSON, err := y.Patch(values)
 		if err != nil {
 			m.Logger.V(1).Info(err.Error())
 			return nil, err
@@ -1101,7 +951,7 @@ func (m *ModuleManager) doBuildSingle(mod *Module) (r *BuildResult, err error) {
 			m.Logger.V(1).Info(err.Error())
 			return nil, err
 		}
-		r.Files = append(r.Files, y.Path)
+		r.Files = append(r.Files, path)
 	}
 
 	return r, nil

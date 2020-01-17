@@ -2,16 +2,18 @@ package variantmod
 
 import (
 	"fmt"
-	"github.com/twpayne/go-vfs/vfst"
-	"github.com/variantdev/mod/pkg/cmdsite"
-	"github.com/variantdev/mod/pkg/execversionmanager"
-	"github.com/variantdev/mod/pkg/loginfra"
-	"k8s.io/klog"
-	"k8s.io/klog/klogr"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/twpayne/go-vfs/vfst"
+	"github.com/variantdev/mod/pkg/cmdsite"
+	"github.com/variantdev/mod/pkg/config/confapi"
+	"github.com/variantdev/mod/pkg/execversionmanager"
+	"github.com/variantdev/mod/pkg/loginfra"
+	"k8s.io/klog"
+	"k8s.io/klog/klogr"
 )
 
 func init() {
@@ -38,10 +40,12 @@ func TestModule(t *testing.T) {
 		Values: map[string]interface{}{
 			"foo": "FOO",
 		},
-		Files: []File{
+		Files: []confapi.File{
 			{
-				Path:   "test.yaml",
-				Source: "git::https://github.com/cloudposse/helmfiles.git@releases/kiam.yaml?ref=0.40.0",
+				Path: "test.yaml",
+				Source: func(_ map[string]interface{}) (string, error) {
+					return "git::https://github.com/cloudposse/helmfiles.git@releases/kiam.yaml?ref=0.40.0", nil
+				},
 			},
 		},
 		Submodules: map[string]*Module{},
@@ -226,12 +230,8 @@ provisioners:
 		t.Fatal(err)
 	}
 
-	mod, err := man.Load()
+	_, err = man.Build()
 	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := man.doBuild(mod); err != nil {
 		t.Fatal(err)
 	}
 
@@ -264,7 +264,7 @@ provisioners:
 		t.Fatal("expected error not occurred")
 	}
 
-	if err := man.lock(mod); err != nil {
+	if err := fs.WriteFile("/path/to/variant.lock", []byte("dependencies: {}\n"), 0755); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -278,7 +278,7 @@ provisioners:
 		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
 	}
 
-	sh, err := mod.Shell()
+	sh, err := man.Shell()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -422,12 +422,8 @@ dependencies:
 		t.Fatal(err)
 	}
 
-	mod, err := man.Load()
+	_, err = man.Build()
 	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := man.doBuild(mod); err != nil {
 		t.Fatal(err)
 	}
 
@@ -455,7 +451,7 @@ dependencies:
 		t.Errorf("assertion failed: expected=%s, got=%s", "1.12.6_2079.5.0", string(myappTxtActual))
 	}
 
-	sh, err := mod.Shell()
+	sh, err := man.Shell()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -476,12 +472,8 @@ dependencies:
 		t.Errorf("unexpected go version output: expected=\"%s\", got=\"%s\"", expected, actual)
 	}
 
-	upMod, err := man.doUp()
+	err = man.Up()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if err := man.lock(upMod); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -574,12 +566,8 @@ dependencies:
 		t.Fatal(err)
 	}
 
-	mod, err := man.Load()
+	_, err = man.Build()
 	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := man.doBuild(mod); err != nil {
 		t.Fatal(err)
 	}
 
@@ -605,12 +593,8 @@ nodeGroups:
 		t.Errorf("assertion failed: expected=%s, got=%s", clusterYaml1Expected, string(clusterYaml1Actual))
 	}
 
-	upMod, err := man.doUp()
+	err = man.Up()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if err := man.lock(upMod); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -627,12 +611,8 @@ nodeGroups:
 		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
 	}
 
-	mod2, err := man.Load()
+	_, err = man.Build()
 	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := man.doBuild(mod2); err != nil {
 		t.Fatal(err)
 	}
 
@@ -730,12 +710,8 @@ dependencies:
 		t.Fatal(err)
 	}
 
-	mod, err := man.Load()
+	_, err = man.Build()
 	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := man.doBuild(mod); err != nil {
 		t.Fatal(err)
 	}
 
@@ -761,12 +737,8 @@ nodeGroups:
 		t.Errorf("assertion failed: expected=%s, got=%s", clusterYaml1Expected, string(clusterYaml1Actual))
 	}
 
-	upMod, err := man.doUp()
+	err = man.Up()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if err := man.lock(upMod); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -783,12 +755,8 @@ nodeGroups:
 		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
 	}
 
-	mod2, err := man.Load()
+	_, err = man.Build()
 	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := man.doBuild(mod2); err != nil {
 		t.Fatal(err)
 	}
 
@@ -815,7 +783,6 @@ nodeGroups:
 	}
 
 }
-
 
 func TestDependencyLockinge_Dockerfile_RegexpReplace(t *testing.T) {
 	if testing.Verbose() {
@@ -873,12 +840,8 @@ dependencies:
 		t.Fatal(err)
 	}
 
-	mod, err := man.Load()
+	_, err = man.Build()
 	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := man.doBuild(mod); err != nil {
 		t.Fatal(err)
 	}
 
@@ -894,12 +857,8 @@ RUN echo hello
 		t.Errorf("assertion failed: expected=%s, got=%s", dockerfile1Expected, string(dockerfile1Actual))
 	}
 
-	upMod, err := man.doUp()
+	err = man.Up()
 	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if err := man.lock(upMod); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -916,12 +875,8 @@ RUN echo hello
 		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
 	}
 
-	mod2, err := man.Load()
+	_, err = man.Build()
 	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := man.doBuild(mod2); err != nil {
 		t.Fatal(err)
 	}
 
