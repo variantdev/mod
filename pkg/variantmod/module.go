@@ -72,6 +72,19 @@ func (m *Module) Shell() (*cmdsite.CommandSite, error) {
 	return m.Executable.ShellFromDirs(dirs), nil
 }
 
+func (m *Module) executableDirs() ([]string, error) {
+	dm, err := m.getDirs()
+	if err != nil {
+		return nil, err
+	}
+
+	ds := []string{}
+	for k := range dm {
+		ds = append(ds, k)
+	}
+	return ds, nil
+}
+
 func (m *Module) ListVersions(depName string, out io.Writer) error {
 	dep, ok := m.ReleaseTrackers[depName]
 	if !ok {

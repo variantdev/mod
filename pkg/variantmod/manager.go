@@ -195,6 +195,14 @@ func (m *ModuleManager) Shell() (*cmdsite.CommandSite, error) {
 	return mod.Shell()
 }
 
+func (m *ModuleManager) ExecutableDirs() ([]string, error) {
+	mod, err := m.loadLockAndModule()
+	if err != nil {
+		return nil, err
+	}
+	return mod.executableDirs()
+}
+
 func (m *ModuleManager) loadLockAndModule() (*Module, error) {
 	lockContents, err := m.loadLockFile(m.LockFile)
 	if err != nil {
