@@ -31,6 +31,30 @@ type ExecDependency struct {
 	Args    []string `hcl:"args,attr"`
 }
 
+type JSONPath struct {
+	Source      string `hcl:"source,attr"`
+	Versions    string `hcl:"versions,attr"`
+	Description string `hcl:"description,attr"`
+}
+
+type GitTags struct {
+	Source string `hcl:"source,attr"`
+}
+
+type GitHubTags struct {
+	Host   string `hcl:"host,attr"`
+	Source string `hcl:"source,attr"`
+}
+
+type GitHubReleases struct {
+	Host   string `hcl:"host,attr"`
+	Source string `hcl:"source,attr"`
+}
+
+type DockerImageTags struct {
+	Source string `hcl:"source,attr"`
+}
+
 type File struct {
 	Name string `hcl:"name,label"`
 

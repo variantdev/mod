@@ -37,17 +37,67 @@ func appToModule(app *hclconf.App) (*confapi.Module, error) {
 		provider := confapi.VersionsFrom{}
 		switch d.Type {
 		case "exec":
-			type E struct {
-				Command string   `hcl:"command,attr"`
-				Args    []string `hcl:"args,attr"`
-			}
-			var e E
+			var e hclconf.ExecDependency
 			if err := gohcl.DecodeBody(d.BodyForType, &hcl.EvalContext{}, &e); err != nil {
 				return nil, err
 			}
 			provider.Exec = confapi.Exec{
 				Command: e.Command,
 				Args:    e.Args,
+			}
+		case "git_tags":
+			var e hclconf.GitTags
+			if err := gohcl.DecodeBody(d.BodyForType, &hcl.EvalContext{}, &e); err != nil {
+				return nil, err
+			}
+			provider.GitTags = confapi.GitTags{
+				Source: func(_ map[string]interface{}) (string, error) {
+					return e.Source, nil
+				},
+			}
+		case "github_tags":
+			var e hclconf.GitHubTags
+			if err := gohcl.DecodeBody(d.BodyForType, &hcl.EvalContext{}, &e); err != nil {
+				return nil, err
+			}
+			provider.GitHubTags = confapi.GitHubTags{
+				Host:   e.Host,
+				Source: func(_ map[string]interface{}) (string, error) {
+					return e.Source, nil
+				},
+			}
+		case "github_releases":
+			var e hclconf.GitHubReleases
+			if err := gohcl.DecodeBody(d.BodyForType, &hcl.EvalContext{}, &e); err != nil {
+				return nil, err
+			}
+			provider.GitHubReleases = confapi.GitHubReleases{
+				Host:   e.Host,
+				Source: func(_ map[string]interface{}) (string, error) {
+					return e.Source, nil
+				},
+			}
+		case "docker_tags":
+			var e hclconf.DockerImageTags
+			if err := gohcl.DecodeBody(d.BodyForType, &hcl.EvalContext{}, &e); err != nil {
+				return nil, err
+			}
+			provider.DockerImageTags = confapi.DockerImageTags{
+				Source: func(_ map[string]interface{}) (string, error) {
+					return e.Source, nil
+				},
+			}
+		case "json_path":
+			var e hclconf.JSONPath
+			if err := gohcl.DecodeBody(d.BodyForType, &hcl.EvalContext{}, &e); err != nil {
+				return nil, err
+			}
+			provider.JSONPath = confapi.GetterJSONPath{
+				Source:      func(_ map[string]interface{}) (string, error) {
+					return e.Source, nil
+				},
+				Versions:    e.Versions,
+				Description: e.Description,
 			}
 		default:
 			return nil, fmt.Errorf("dependency of type %q not implemented yet", d.Type)
