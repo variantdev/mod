@@ -136,8 +136,10 @@ func (l *Loader) LoadDirectory(dir string) (*App, error) {
 func (l *Loader) loadFiles(files []string) (*App, error) {
 	c, hclFiles, err := l.loadFile(files...)
 	nameToFiles := map[string]*hcl2.File{}
-	for i := range files {
-		nameToFiles[files[i]] = hclFiles[i]
+	if len(hclFiles) > 0 {
+		for i := range files {
+			nameToFiles[files[i]] = hclFiles[i]
+		}
 	}
 
 	app := &App{
