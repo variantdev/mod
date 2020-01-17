@@ -53,13 +53,13 @@ type Executable struct {
 
 type Platform struct {
 	Source hcl2.Expression `hcl:"source,attr"`
-	Docker Docker          `hcl:"docker,attr"`
-	OS     string          `hcl:"os,attr"`
-	Arch   string          `hcl:"arch,attr"`
+	Docker *Docker         `hcl:"docker,block"`
+	OS     *string         `hcl:"os,attr"`
+	Arch   *string         `hcl:"arch,attr"`
 }
 
 type Docker struct {
-	Command string          `hcl:"command,attr"`
+	Command *string         `hcl:"command,attr"`
 	Image   string          `hcl:"image,attr"`
 	Tag     hcl2.Expression `hcl:"tag,attr"`
 	Volumes hcl2.Expression `hcl:"volumes,attr"`

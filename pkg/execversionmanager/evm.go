@@ -229,7 +229,15 @@ func (p *ExecVM) getPlatformSpecificBin(name string, platform Platform) (*Bin, e
 			return nil, err
 		}
 
-		translated := strings.Replace(localCopy, p.CacheDir, p.GoGetterCacheDir, 1)
+		renamed := filepath.Join(filepath.Dir(localCopy), name)
+		if err := p.fs.Rename(localCopy, renamed); err != nil {
+			return nil, err
+		}
+		if err := p.fs.Chmod(renamed, 0755); err != nil {
+			return nil, err
+		}
+
+		translated := strings.Replace(renamed, p.CacheDir, p.GoGetterCacheDir, 1)
 
 		localCopy = translated
 

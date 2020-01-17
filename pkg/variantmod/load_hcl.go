@@ -161,8 +161,24 @@ func appToModule(app *hclconf.App) (*confapi.Module, error) {
 		for i := range e.Platfoms {
 			p := e.Platfoms[i]
 
+			var os, arch string
+			if p.OS != nil {
+				os = *p.OS
+			}
+			if p.Arch != nil {
+				arch = *p.Arch
+			}
 			pp := confapi.Platform{
-				Source:   func(v map[string]interface{}) (string, error) {
+				Selector: confapi.Selector{
+					MatchLabels: confapi.MatchLabels{
+						OS:   os,
+						Arch: arch,
+					},
+				},
+			}
+
+			if p.Source.Range().Start != p.Source.Range().End {
+				pp.Source = func(v map[string]interface{}) (string, error) {
 					vars, err := vToVars(v)
 					if err != nil {
 						return "", err
@@ -174,11 +190,14 @@ func appToModule(app *hclconf.App) (*confapi.Module, error) {
 						return "", err
 					}
 					return src, nil
-				},
-				Docker:   func(v map[string]interface{}) (*yaml.OptionSpec, error) {
+				}
+			}
+
+			if p.Docker != nil {
+				pp.Docker = func(v map[string]interface{}) (*yaml.OptionSpec, error) {
 					var d yaml.OptionSpec
 
-					d.Command = &p.Docker.Command
+					d.Command = p.Docker.Command
 					d.Image = p.Docker.Image
 					d.Workdir = &p.Docker.WorkDir
 
@@ -206,13 +225,7 @@ func appToModule(app *hclconf.App) (*confapi.Module, error) {
 					d.Volume = vols
 
 					return &d, nil
-				},
-				Selector: confapi.Selector{
-					MatchLabels: confapi.MatchLabels{
-						OS:   p.OS,
-						Arch: p.Arch,
-					},
-				},
+				}
 			}
 
 			ee.Platforms = append(ee.Platforms, pp)

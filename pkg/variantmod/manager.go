@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/go-logr/logr"
+	aliases "github.com/k-kinzal/aliases/pkg/aliases/yaml"
 	"github.com/twpayne/go-vfs"
 	"github.com/variantdev/mod/pkg/cmdsite"
 	"github.com/variantdev/mod/pkg/config/confapi"
@@ -391,17 +392,27 @@ func (m *ModuleManager) initModule(params confapi.ModuleParams, mod confapi.Modu
 	for k, v := range mod.Executables {
 		var e execversionmanager.Executable
 		for _, p := range v.Platforms {
-			src, err := p.Source(vals)
-			if err != nil{
-				return nil, err
+			var src string
+			if p.Source != nil {
+				s, err := p.Source(vals)
+				if err != nil {
+					return nil, err
+				}
+				src = s
 			}
-			docker, err := p.Docker(vals)
-			if err != nil {
-				return nil, err
+
+			var docker aliases.OptionSpec
+			if p.Docker != nil {
+				d, err := p.Docker(vals)
+				if err != nil {
+					return nil, err
+				}
+				docker = *d
 			}
+
 			e.Platforms = append(e.Platforms, execversionmanager.Platform{
 				Source: src,
-				Docker: *docker,
+				Docker: docker,
 				Selector: execversionmanager.Selector{MatchLabels: execversionmanager.MatchLabels{
 					OS:   p.Selector.MatchLabels.OS,
 					Arch: p.Selector.MatchLabels.Arch,
