@@ -11,8 +11,8 @@ import (
 	"github.com/zclconf/go-cty/cty"
 )
 
-func (m *ModuleManager) loadHclModule(params confapi.ModuleParams) (*confapi.Module, error) {
-	hclApp, err := hclconf.NewLoader(m.fs.ReadFile).LoadFile(params.Source)
+func (m *ModuleLoader) loadHclModule(params confapi.ModuleParams) (*confapi.Module, error) {
+	hclApp, err := hclconf.NewLoader(m.FS.ReadFile).LoadFile(params.Source)
 	if err != nil {
 		return nil, err
 	}
@@ -27,8 +27,10 @@ func appToModule(app *hclconf.App) (*confapi.Module, error) {
 		return nil, fmt.Errorf("unsupported number of modules: only one module is currently supported: got %d", numModules)
 	}
 
-	mod := app.Config.Modules[0]
+	return HCLModuleAsConfModule(app.Config.Modules[0])
+}
 
+func HCLModuleAsConfModule(mod hclconf.Module) (*confapi.Module, error) {
 	rels := map[string]confapi.Release{}
 
 	deps := map[string]confapi.Dependency{}

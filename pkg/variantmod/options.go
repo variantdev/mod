@@ -2,6 +2,7 @@ package variantmod
 
 import (
 	"fmt"
+	"github.com/variantdev/mod/pkg/config/confapi"
 	"path/filepath"
 	"strings"
 
@@ -134,5 +135,18 @@ type goGetterWDOption struct {
 
 func (s *goGetterWDOption) SetOption(r *ModuleManager) error {
 	r.goGetterAbsWorkDir = s.d
+	return nil
+}
+
+type moduleOption struct {
+	mod confapi.Module
+}
+
+func InMemoryModule(mod confapi.Module) Option {
+	return &moduleOption{mod: mod}
+}
+
+func (m *moduleOption) SetOption(r *ModuleManager) error {
+	r.Module = &m.mod
 	return nil
 }

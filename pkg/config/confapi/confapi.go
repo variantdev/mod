@@ -27,6 +27,7 @@ type ModuleParams struct {
 	Alias          string
 	LockedVersions ModVersionLock
 	ForceUpdate    bool
+	Module         *Module
 }
 
 type TextReplace struct {

@@ -12,7 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func (m *ModuleManager) loadYamlModule(params confapi.ModuleParams) (*confapi.Module, error) {
+func (m *ModuleLoader) loadYamlModule(params confapi.ModuleParams) (*confapi.Module, error) {
 	resolved, err := m.dep.Resolve(params.Source)
 	if err != nil {
 		return nil, err
@@ -26,11 +26,11 @@ func (m *ModuleManager) loadYamlModule(params confapi.ModuleParams) (*confapi.Mo
 		resolved = filepath.Join(resolved, "variant.mod")
 	}
 
-	bytes, err := m.fs.ReadFile(resolved)
+	bytes, err := m.FS.ReadFile(resolved)
 	if err != nil {
 		m.Logger.Error(err, "read file", "resolved", resolved, "depspec", params)
 		var err2 error
-		bytes, err2 = m.fs.ReadFile(resolved)
+		bytes, err2 = m.FS.ReadFile(resolved)
 		if err2 != nil {
 			return nil, err2
 		}

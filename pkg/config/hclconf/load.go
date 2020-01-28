@@ -73,35 +73,46 @@ func (t *configurable) HCL2Config() (*Config, error) {
 	return config, nil
 }
 
-func (l Loader) loadFile(filenames ...string) (*configurable, []*hcl2.File, error) {
+func (l Loader) loadSources(srcs map[string][]byte) (*configurable, map[string]*hcl2.File, error) {
 	var files []*hcl2.File
 	var diags hcl2.Diagnostics
+	nameToFiles := map[string]*hcl2.File{}
 
-	for _, filename := range filenames {
+	for filename, src := range srcs {
 		var f *hcl2.File
 		var ds hcl2.Diagnostics
-		src, err := l.readFile(filename)
-		if err != nil {
-			return nil, nil, err
-		}
 		if strings.HasSuffix(filename, ".json") {
 			f, ds = l.Parser.ParseJSON(src, filename)
 		} else {
 			f, ds = l.Parser.ParseHCL(src, filename)
 		}
 		files = append(files, f)
+		nameToFiles[filename] = f
 		diags = append(diags, ds...)
 	}
 
 	if diags.HasErrors() {
-		return nil, files, diags
+		return nil, nameToFiles, diags
 	}
 
 	body := hcl2.MergeFiles(files)
 
 	return &configurable{
 		Body: body,
-	}, files, nil
+	}, nameToFiles, nil
+}
+
+func (l Loader) loadFile(filenames ...string) (*configurable, map[string]*hcl2.File, error) {
+	srcs := map[string][]byte{}
+	for _, filename := range filenames {
+		src, err := l.readFile(filename)
+		if err != nil {
+			return nil, nil, err
+		}
+		srcs[filename] = src
+	}
+
+	return l.loadSources(srcs)
 }
 
 type App struct {
@@ -134,13 +145,7 @@ func (l *Loader) LoadDirectory(dir string) (*App, error) {
 }
 
 func (l *Loader) loadFiles(files []string) (*App, error) {
-	c, hclFiles, err := l.loadFile(files...)
-	nameToFiles := map[string]*hcl2.File{}
-	if len(hclFiles) > 0 {
-		for i := range files {
-			nameToFiles[files[i]] = hclFiles[i]
-		}
-	}
+	c, nameToFiles, err := l.loadFile(files...)
 
 	app := &App{
 		Files: nameToFiles,
