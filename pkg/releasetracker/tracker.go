@@ -23,8 +23,15 @@ import (
 )
 
 type Release struct {
-	Semver      *semver.Version
-	Version     string
+	// Semver is the semantic version of the release.
+	//
+	// For "1.2.3" this is a semver object of "1.2.3", and for "1.2.3.123" it is a semver of "1.2.3-123" so that we can
+	// even handle versions that are not precisely semver-compatible.
+	Semver *semver.Version
+
+	// Version is mostly the original version string obtained from a release provider, with the "v" prefix removed
+	Version string
+
 	Description string
 }
 
@@ -574,7 +581,7 @@ func (p *Tracker) versionStringsToReleases(vs []string) ([]*Release, error) {
 		if v != nil {
 			rs = append(rs, &Release{
 				Semver:  v,
-				Version: s,
+				Version: strings.TrimPrefix(s, "v"),
 			})
 		}
 	}
