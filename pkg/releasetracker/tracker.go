@@ -5,18 +5,19 @@ import (
 	"github.com/Masterminds/semver"
 	"github.com/PaesslerAG/jsonpath"
 	"github.com/go-logr/logr"
+	"github.com/heroku/docker-registry-client/registry"
 	"github.com/twpayne/go-vfs"
 	"github.com/variantdev/mod/pkg/cmdsite"
 	"github.com/variantdev/mod/pkg/depresolver"
 	"github.com/variantdev/mod/pkg/maputil"
 	"github.com/variantdev/mod/pkg/vhttpget"
-	"github.com/heroku/docker-registry-client/registry"
 	"gopkg.in/yaml.v3"
 	"io/ioutil"
 	"k8s.io/klog/klogr"
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -211,8 +212,8 @@ func newGetterProvider(spec GetterJSONPath, r *Tracker) *getterJsonPathProvider 
 
 func newDockerHubImageTagsProvider(spec DockerImageTags, r *Tracker) *dockerImageTagsProvider {
 	return &dockerImageTagsProvider{
-		source:   spec.Source,
-		runtime:  r,
+		source:  spec.Source,
+		runtime: r,
 	}
 }
 
@@ -282,7 +283,7 @@ func (p *getterJsonPathProvider) All() ([]*Release, error) {
 }
 
 type dockerImageTagsProvider struct {
-	source string
+	source   string
 	username string
 	password string
 
@@ -479,25 +480,12 @@ func (p *Tracker) extractString(tmp interface{}, path string) (string, error) {
 }
 
 func (p *Tracker) versionsToReleases(vs []string) ([]*Release, error) {
-	vss, err := p.versionStringsToSemvers(vs)
+	rs, err := p.versionStringsToReleases(vs)
 	if err != nil {
 		return nil, err
 	}
 
-	rs := []*Release{}
-
-	for _, ver := range vss {
-		rs = append(rs, semverToRelease(ver))
-	}
-
 	return rs, nil
-}
-
-func semverToRelease(ver *semver.Version) *Release {
-	return &Release{
-		Semver:  ver,
-		Version: ver.String(),
-	}
 }
 
 func (p *Tracker) extractVersionStrings(tmp interface{}, jpath string) ([]string, error) {
@@ -546,22 +534,56 @@ func (p *Tracker) extractVersionStrings(tmp interface{}, jpath string) ([]string
 	return vs, nil
 }
 
-func (p *Tracker) versionStringsToSemvers(vs []string) ([]*semver.Version, error) {
-	vss := []*semver.Version{}
+var versionRegex *regexp.Regexp
+
+func init() {
+	versionRegex = regexp.MustCompile(`v?([0-9]+)(\.[0-9]+)?(\.[0-9]+)?` + `(.*)`)
+}
+
+func nonSemverWorkaround(s string) string {
+	matches := versionRegex.FindStringSubmatch(s)
+
+	preLike := matches[4]
+
+	if preLike != "" && preLike[0] == '.' {
+		s = ""
+		ss := matches[1:4]
+		for i := range ss {
+			if ss[i] != "" {
+				s += ss[i]
+			}
+		}
+
+		s += "-" + preLike[1:]
+	}
+
+	return s
+}
+
+func (p *Tracker) versionStringsToReleases(vs []string) ([]*Release, error) {
+	rs := []*Release{}
 	for i, s := range vs {
-		v, err := semver.NewVersion(strings.TrimSpace(s))
+		fixedS := nonSemverWorkaround(strings.TrimSpace(s))
+
+		v, err := semver.NewVersion(fixedS)
 		if err != nil {
 			e := fmt.Errorf("parsing version: index %d: %q: %v", i, s, err)
 			p.Logger.V(1).Info("ignoring error", "err", e)
 		}
+
 		if v != nil {
-			vss = append(vss, v)
+			rs = append(rs, &Release{
+				Semver:  v,
+				Version: s,
+			})
 		}
 	}
 
-	sort.Sort(semver.Collection(vss))
+	sort.Slice(rs, func(i, j int) bool {
+		return rs[i].Semver.LessThan(rs[j].Semver)
+	})
 
-	return vss, nil
+	return rs, nil
 }
 
 func (p *Tracker) GetProvider() (ReleaseProvider, error) {
