@@ -550,7 +550,11 @@ func init() {
 func nonSemverWorkaround(s string) string {
 	matches := versionRegex.FindStringSubmatch(s)
 
-	preLike := matches[4]
+	var preLike string
+
+	if len(matches) > 3 {
+		preLike = matches[4]
+	}
 
 	if preLike != "" && preLike[0] == '.' {
 		s = ""
