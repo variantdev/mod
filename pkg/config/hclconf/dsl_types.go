@@ -103,4 +103,5 @@ type Docker struct {
 	Tag     hcl2.Expression `hcl:"tag,attr"`
 	Volumes hcl2.Expression `hcl:"volumes,attr"`
 	WorkDir string          `hcl:"workdir,attr"`
+	Env     hcl2.Expression `hcl:"env,attr"`
 }

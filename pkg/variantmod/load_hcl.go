@@ -322,6 +322,16 @@ func HCLModuleAsConfModule(mod hclconf.Module) (*confapi.Module, error) {
 
 					d.Volume = vols
 
+					env := map[string]string{}
+
+					if err := gohcl.DecodeExpression(p.Docker.Env, &hcl.EvalContext{
+						Variables: vars,
+					}, &env); err != nil {
+						return nil, err
+					}
+
+					d.Env = env
+
 					return &d, nil
 				}
 			}
