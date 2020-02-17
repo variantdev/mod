@@ -653,6 +653,12 @@ func (m *ModuleManager) buildModule(mod *Module) (r *BuildResult, err error) {
 					dst = strings.ReplaceAll(path, srcDir, dstDir)
 				}
 
+				dstDirToWrite := filepath.Dir(dst)
+
+				if err := vfs.MkdirAll(m.fs, dstDirToWrite, 0755); err != nil {
+					return fmt.Errorf("mkdirall on %q: %w", dstDirToWrite, err)
+				}
+
 				if err := m.fs.WriteFile(dst, contents, info.Mode()); err != nil {
 					m.Logger.V(1).Info(err.Error())
 					return err
@@ -713,7 +719,15 @@ func (m *ModuleManager) buildModule(mod *Module) (r *BuildResult, err error) {
 			contents = []byte(res)
 		}
 
-		if err := m.fs.WriteFile(filepath.Join(m.AbsWorkDir, f.Path), contents, 0644); err != nil {
+		dstFile := filepath.Join(m.AbsWorkDir, f.Path)
+
+		dstDir := filepath.Dir(dstFile)
+
+		if err := vfs.MkdirAll(m.fs, dstDir, 0755); err != nil {
+			return nil, fmt.Errorf("mkdirall on %q: %w", dstDir, err)
+		}
+
+		if err := m.fs.WriteFile(dstFile, contents, 0644); err != nil {
 			m.Logger.V(1).Info(err.Error())
 			return nil, err
 		}
