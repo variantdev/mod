@@ -13,6 +13,7 @@ type Module struct {
 
 	Dependencies   []Dependency    `hcl:"dependency,block"`
 	Files          []File          `hcl:"file,block"`
+	Directories    []Directory     `hcl:"directory,block"`
 	RegexpReplaces []RegexpReplace `hcl:"regexp_replace,block"`
 	Executables    []Executable    `hcl:"executable,block"`
 }
@@ -60,6 +61,20 @@ type File struct {
 
 	Source string          `hcl:"source,attr"`
 	Args   hcl2.Expression `hcl:"args,attr"`
+}
+
+type Directory struct {
+	Name string `hcl:"name,label"`
+
+	Source string `hcl:"source,attr"`
+
+	Templates []Template `hcl:"template,block"`
+}
+
+type Template struct {
+	PathPattern string `hcl:"name,label"`
+
+	Args hcl2.Expression `hcl:"args,attr"`
 }
 
 type RegexpReplace struct {

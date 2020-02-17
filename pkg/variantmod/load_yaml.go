@@ -13,7 +13,7 @@ import (
 )
 
 func (m *ModuleLoader) loadYamlModule(params confapi.ModuleParams) (*confapi.Module, error) {
-	resolved, err := m.dep.Resolve(params.Source)
+	resolved, err := m.dep.ResolveFile(params.Source)
 	if err != nil {
 		return nil, err
 	}
@@ -112,6 +112,11 @@ func (m *ModuleLoader) loadYamlModule(params confapi.ModuleParams) (*confapi.Mod
 		files = append(files, yamlconf.ToFile(path, fspec))
 	}
 
+	dirs := []confapi.Directory{}
+	for path, dspec := range spec.Provisioners.Directories {
+		dirs = append(dirs, yamlconf.ToDirectory(path, dspec))
+	}
+
 	regexpReplaces := []confapi.RegexpReplace{}
 	for path, rspec := range spec.Provisioners.RegexpReplace {
 		regexpReplaces = append(regexpReplaces, yamlconf.ToRegexpReplace(path, rspec))
@@ -147,9 +152,9 @@ func (m *ModuleLoader) loadYamlModule(params confapi.ModuleParams) (*confapi.Mod
 		Releases:       releases,
 		Executables:    execs,
 		Files:          files,
+		Directories:    dirs,
 		RegexpReplaces: regexpReplaces,
 		TextReplaces:   textReplaces,
 		Yamls:          yamls,
 	}, nil
 }
-

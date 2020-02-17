@@ -265,6 +265,7 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 		Values:          vals,
 		ValuesSchema:    mod.ValuesSchema,
 		Files:           mod.Files,
+		Directories:     mod.Directories,
 		RegexpReplaces:  mod.RegexpReplaces,
 		TextReplaces:    mod.TextReplaces,
 		Yamls:           mod.Yamls,

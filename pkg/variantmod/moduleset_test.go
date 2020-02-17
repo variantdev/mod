@@ -29,7 +29,7 @@ module "myapp" {
     version = "> 0.94.0"
   }
 
-  regexp_replace "Dockerfile" {
+  regexp_replace "build/Dockerfile" {
     from = "(FROM helmfile:)(\\S+)(\\s+)"
     to = "$${1}${dep.helmfile.version}$${3}"
   }
@@ -45,10 +45,52 @@ module "myapp" {
     version = "> 0.94.0"
   }
 
-  file "Dockerfile" {
-    source = "Dockerfile.tpl"
+  file "build/Dockerfile" {
+    source = "source/Dockerfile.tpl"
     args = {
       version = "${dep.helmfile.version}"
+    }
+  }
+}
+`,
+		},
+		{
+			in: `
+module "myapp" {
+  dependency "exec" "helmfile" {
+    command = "go"
+    args = ["run", "main.go"]
+    version = "> 0.94.0"
+  }
+
+  directory "build" {
+    source = "./source"
+
+    template "(.*)\\.tpl" {
+      args = {
+        version = "${dep.helmfile.version}"
+      }
+    }
+  }
+}
+`,
+		},
+		{
+			in: `
+module "myapp" {
+  dependency "exec" "helmfile" {
+    command = "go"
+    args = ["run", "main.go"]
+    version = "> 0.94.0"
+  }
+
+  directory "build" {
+    source = "./source"
+
+    template "(.*/Dockerfile)\\.tpl" {
+      args = {
+        version = "${dep.helmfile.version}"
+      }
     }
   }
 }
@@ -62,11 +104,11 @@ module "myapp" {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			files := map[string]interface{}{
 				"/path/to/myapp.variantmod": tc.in,
-				"/path/to/Dockerfile": `FROM helmfile:0.94.0
+				"/path/to/build/Dockerfile": `FROM helmfile:0.94.0
 
 RUN echo hello
 `,
-				"/path/to/Dockerfile.tpl": `FROM helmfile:{{.version}}
+				"/path/to/source/Dockerfile.tpl": `FROM helmfile:{{.version}}
 
 RUN echo hello
 `,
@@ -107,7 +149,7 @@ dependencies:
 
 RUN echo hello
 `
-			dockerfile1Actual, err := fs.ReadFile("/path/to/Dockerfile")
+			dockerfile1Actual, err := fs.ReadFile("/path/to/build/Dockerfile")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -139,7 +181,7 @@ RUN echo hello
 
 RUN echo hello
 `
-			dockerfile2Actual, err := fs.ReadFile("/path/to/Dockerfile")
+			dockerfile2Actual, err := fs.ReadFile("/path/to/build/Dockerfile")
 			if err != nil {
 				t.Fatal(err)
 			}

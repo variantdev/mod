@@ -18,6 +18,7 @@ type Module struct {
 	Values         Values
 	ValuesSchema   Values
 	Files          []confapi.File
+	Directories    []confapi.Directory
 	TextReplaces   []confapi.TextReplace
 	RegexpReplaces []confapi.RegexpReplace
 	Yamls          []confapi.YamlPatch

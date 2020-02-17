@@ -10,6 +10,7 @@ type Module struct {
 	Executables    map[string]Executable
 	Releases       map[string]Release
 	Files          []File
+	Directories    []Directory
 	TextReplaces   []TextReplace
 	RegexpReplaces []RegexpReplace
 	Yamls          []YamlPatch
@@ -19,6 +20,17 @@ type File struct {
 	Path   string
 	Source func(map[string]interface{}) (string, error)
 	Args   func(map[string]interface{}) (map[string]interface{}, error)
+}
+
+type Directory struct {
+	Path      string
+	Source    func(map[string]interface{}) (string, error)
+	Templates []Template
+}
+
+type Template struct {
+	SourcePattern string
+	Args          func(map[string]interface{}) (map[string]interface{}, error)
 }
 
 type ModuleParams struct {

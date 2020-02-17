@@ -12,10 +12,10 @@ import (
 type ModuleSpec struct {
 	Name string `yaml:"name"`
 
-	Parameters   ParametersSpec                 `yaml:"parameters"`
-	Provisioners ProvisionersSpec               `yaml:"provisioners"`
-	Dependencies map[string]DependencySpec      `yaml:"dependencies"`
-	Releases     map[string]ReleaseSpec `yaml:"releases"`
+	Parameters   ParametersSpec            `yaml:"parameters"`
+	Provisioners ProvisionersSpec          `yaml:"provisioners"`
+	Dependencies map[string]DependencySpec `yaml:"dependencies"`
+	Releases     map[string]ReleaseSpec    `yaml:"releases"`
 }
 
 type ReleaseSpec struct {
@@ -91,6 +91,7 @@ type ParametersSpec struct {
 
 type ProvisionersSpec struct {
 	Files         map[string]FileSpec          `yaml:"files"`
+	Directories   map[string]DirectorySpec     `yaml:"directories"`
 	Executables   execversionmanager.Config    `yaml:",inline"`
 	TextReplace   map[string]TextReplaceSpec   `yaml:"textReplace"`
 	RegexpReplace map[string]RegexpReplaceSpec `yaml:"regexpReplace"`
@@ -99,6 +100,16 @@ type ProvisionersSpec struct {
 
 type FileSpec struct {
 	Source    string                 `yaml:"source"`
+	Arguments map[string]interface{} `yaml:"arguments"`
+}
+
+type DirectorySpec struct {
+	Source    string                  `yaml:"source"`
+	Arguments map[string]interface{}  `yaml:"arguments"`
+	Templates map[string]TemplateSpec `yaml:"templates"`
+}
+
+type TemplateSpec struct {
 	Arguments map[string]interface{} `yaml:"arguments"`
 }
 
@@ -123,6 +134,25 @@ func ToFile(path string, spec FileSpec) confapi.File {
 		Path:   path,
 		Source: NewRender("file.sourc", spec.Source),
 		Args:   NewRenderArgs(spec.Arguments),
+	}
+}
+
+func ToDirectory(path string, spec DirectorySpec) confapi.Directory {
+	var tmpls []confapi.Template
+
+	for pat := range spec.Templates {
+		tmplSpec := spec.Templates[pat]
+
+		tmpls = append(tmpls, confapi.Template{
+			SourcePattern: pat,
+			Args:          NewRenderArgs(tmplSpec.Arguments),
+		})
+	}
+
+	return confapi.Directory{
+		Path:      path,
+		Source:    NewRender("directory.sourc", spec.Source),
+		Templates: tmpls,
 	}
 }
 
@@ -154,7 +184,7 @@ func ToYamlPatch(path string, spec []YamlPatchSpec) confapi.YamlPatch {
 		patches = append(patches, p)
 	}
 	y := confapi.YamlPatch{
-		Path:    NewRender("yamlPatch.path", path),
+		Path: NewRender("yamlPatch.path", path),
 		Patch: func(values map[string]interface{}) (string, error) {
 			out, err := json.Marshal(patches)
 			if err != nil {

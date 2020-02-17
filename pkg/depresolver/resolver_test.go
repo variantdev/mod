@@ -70,7 +70,7 @@ func TestRemote(t *testing.T) {
 			//   https://github.com/aslafy-z/helm-git
 
 			url := "git::https://github.com/cloudposse/helmfiles.git@releases/kiam.yaml?ref=0.40.0"
-			file, err := remote.Resolve(url)
+			file, err := remote.ResolveFile(url)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

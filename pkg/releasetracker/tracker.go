@@ -384,7 +384,7 @@ func (p *Tracker) releasesFromShell(cmd string) ([]*Release, error) {
 }
 
 func (p *Tracker) releasesFromGetterJsonPath(spec GetterJSONPath) ([]*Release, error) {
-	localCopy, err := p.dep.Resolve(spec.Source)
+	localCopy, err := p.dep.ResolveFile(spec.Source)
 	if err != nil {
 		return nil, err
 	}

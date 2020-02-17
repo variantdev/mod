@@ -566,6 +566,109 @@ func (m *ModuleManager) buildModule(mod *Module) (r *BuildResult, err error) {
 		m.Logger.V(1).Info("err", "index", i, "err", err.String())
 	}
 
+	for _, d := range mod.Directories {
+		src, err := d.Source(values)
+		if err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+
+		yours, err := m.dep.ResolveDir(src)
+		if err != nil {
+			m.Logger.V(1).Info(err.Error())
+			return nil, err
+		}
+
+		tmpls := map[string]struct{
+			pat *regexp.Regexp
+			tmpl confapi.Template
+		}{}
+
+		for _, v := range d.Templates {
+			tmpls[v.SourcePattern] =  struct{
+				pat *regexp.Regexp
+				tmpl confapi.Template
+			}{
+				pat: regexp.MustCompile(v.SourcePattern),
+				tmpl: v,
+			}
+		}
+
+		var srcDir string
+
+		var dstDir string
+
+		mine := filepath.Join(m.AbsWorkDir, yours)
+		m.Logger.V(1).Info("resolved", "modulefile", yours, "localfile", mine)
+
+		if _, err := m.fs.ReadDir(mine); err != nil {
+			if _, err = m.fs.ReadDir(yours); err != nil {
+				m.Logger.V(1).Info(err.Error())
+				return nil, err
+			}
+			srcDir = yours
+			dstDir = d.Path
+		} else {
+			srcDir = mine
+			dstDir = filepath.Join(m.AbsWorkDir, d.Path)
+		}
+
+		err = vfs.Walk(m.fs, srcDir, func(path string, info os.FileInfo, err error) error {
+		 	if err != nil {
+		 		return fmt.Errorf("%s: %v", path, err)
+			}
+
+		 	if info.IsDir() {
+		 		return nil
+			}
+
+			for _, v:= range tmpls {
+				matches := v.pat.FindStringSubmatch(path)
+
+				contents, err := m.fs.ReadFile(path)
+				if err != nil {
+					return err
+				}
+
+				var dst string
+
+				if len(matches) > 1 {
+					dst = strings.ReplaceAll(matches[1], srcDir, dstDir)
+
+					args, err := v.tmpl.Args(values)
+					if err != nil {
+						m.Logger.V(1).Info(err.Error())
+						return err
+					}
+
+					res, err := tmpl.Render("source file", string(contents), args)
+					if err != nil {
+						m.Logger.V(1).Info(err.Error())
+						return err
+					}
+					contents = []byte(res)
+
+					// write(dst, result)
+				} else {
+					dst = strings.ReplaceAll(path, srcDir, dstDir)
+				}
+
+				if err := m.fs.WriteFile(dst, contents, info.Mode()); err != nil {
+					m.Logger.V(1).Info(err.Error())
+					return err
+				}
+
+				r.Files = append(r.Files, dst)
+			}
+
+			return nil
+		})
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	for _, f := range mod.Files {
 		u, err := f.Source(values)
 		if err != nil {
@@ -573,7 +676,7 @@ func (m *ModuleManager) buildModule(mod *Module) (r *BuildResult, err error) {
 			return nil, err
 		}
 
-		yours, err := m.dep.Resolve(u)
+		yours, err := m.dep.ResolveFile(u)
 		if err != nil {
 			m.Logger.V(1).Info(err.Error())
 			return nil, err
@@ -581,7 +684,7 @@ func (m *ModuleManager) buildModule(mod *Module) (r *BuildResult, err error) {
 
 		var target string
 
-		mine := filepath.Join(m.AbsWorkDir, filepath.Base(yours))
+		mine := filepath.Join(m.AbsWorkDir, yours)
 		m.Logger.V(1).Info("resolved", "input", u, "modulefile", yours, "localfile", mine)
 		contents, err := m.fs.ReadFile(mine)
 		if err != nil {

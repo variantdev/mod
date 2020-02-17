@@ -67,7 +67,7 @@ func HCLModuleAsConfModule(mod hclconf.Module) (*confapi.Module, error) {
 				host = *e.Host
 			}
 			provider.GitHubTags = confapi.GitHubTags{
-				Host:   host,
+				Host: host,
 				Source: func(_ map[string]interface{}) (string, error) {
 					return e.Source, nil
 				},
@@ -82,7 +82,7 @@ func HCLModuleAsConfModule(mod hclconf.Module) (*confapi.Module, error) {
 				host = *e.Host
 			}
 			provider.GitHubReleases = confapi.GitHubReleases{
-				Host:   host,
+				Host: host,
 				Source: func(_ map[string]interface{}) (string, error) {
 					return e.Source, nil
 				},
@@ -103,7 +103,7 @@ func HCLModuleAsConfModule(mod hclconf.Module) (*confapi.Module, error) {
 				return nil, err
 			}
 			provider.JSONPath = confapi.GetterJSONPath{
-				Source:      func(_ map[string]interface{}) (string, error) {
+				Source: func(_ map[string]interface{}) (string, error) {
 					return e.Source, nil
 				},
 				Versions:    e.Versions,
@@ -172,7 +172,7 @@ func HCLModuleAsConfModule(mod hclconf.Module) (*confapi.Module, error) {
 			}
 
 			var str cty.Value
-			if err:= gohcl.DecodeExpression(r.To, &hcl.EvalContext{
+			if err := gohcl.DecodeExpression(r.To, &hcl.EvalContext{
 				Variables: vars,
 			}, &str); err != nil {
 				return "", err
@@ -196,7 +196,7 @@ func HCLModuleAsConfModule(mod hclconf.Module) (*confapi.Module, error) {
 				return nil, err
 			}
 			m := map[string]string{}
-			if err:= gohcl.DecodeExpression(f.Args, &hcl.EvalContext{
+			if err := gohcl.DecodeExpression(f.Args, &hcl.EvalContext{
 				Variables: vars,
 			}, &m); err != nil {
 				return nil, err
@@ -210,6 +210,44 @@ func HCLModuleAsConfModule(mod hclconf.Module) (*confapi.Module, error) {
 		files = append(files, ff)
 	}
 
+	dirs := []confapi.Directory{}
+	for i := range mod.Directories {
+		d := mod.Directories[i]
+
+		var dd confapi.Directory
+
+		dd.Path = d.Name
+		dd.Source = func(v map[string]interface{}) (string, error) {
+			return d.Source, nil
+		}
+
+		for j := range d.Templates {
+			tmpl := d.Templates[j]
+
+			dd.Templates = append(dd.Templates, confapi.Template{
+				SourcePattern: tmpl.PathPattern,
+				Args: func(v map[string]interface{}) (map[string]interface{}, error) {
+					vars, err := vToVars(v)
+					if err != nil {
+						return nil, err
+					}
+					m := map[string]string{}
+					if err := gohcl.DecodeExpression(tmpl.Args, &hcl.EvalContext{
+						Variables: vars,
+					}, &m); err != nil {
+						return nil, err
+					}
+					mi := map[string]interface{}{}
+					for k, v := range m {
+						mi[k] = v
+					}
+					return mi, nil
+				},
+			})
+		}
+
+		dirs = append(dirs, dd)
+	}
 
 	execs := map[string]confapi.Executable{}
 	for k := range mod.Executables {
@@ -244,7 +282,7 @@ func HCLModuleAsConfModule(mod hclconf.Module) (*confapi.Module, error) {
 						return "", err
 					}
 					var src string
-					if err:= gohcl.DecodeExpression(p.Source, &hcl.EvalContext{
+					if err := gohcl.DecodeExpression(p.Source, &hcl.EvalContext{
 						Variables: vars,
 					}, &src); err != nil {
 						return "", err
@@ -267,7 +305,7 @@ func HCLModuleAsConfModule(mod hclconf.Module) (*confapi.Module, error) {
 					}
 
 					var tag string
-					if err:= gohcl.DecodeExpression(p.Docker.Tag, &hcl.EvalContext{
+					if err := gohcl.DecodeExpression(p.Docker.Tag, &hcl.EvalContext{
 						Variables: vars,
 					}, &tag); err != nil {
 						return nil, err
@@ -276,7 +314,7 @@ func HCLModuleAsConfModule(mod hclconf.Module) (*confapi.Module, error) {
 					d.Tag = tag
 
 					var vols []string
-					if err:= gohcl.DecodeExpression(p.Docker.Volumes, &hcl.EvalContext{
+					if err := gohcl.DecodeExpression(p.Docker.Volumes, &hcl.EvalContext{
 						Variables: vars,
 					}, &vols); err != nil {
 						return nil, err
@@ -302,6 +340,7 @@ func HCLModuleAsConfModule(mod hclconf.Module) (*confapi.Module, error) {
 		Releases:       rels,
 		Executables:    execs,
 		Files:          files,
+		Directories:    dirs,
 		RegexpReplaces: regexpReplaces,
 		TextReplaces:   []confapi.TextReplace{},
 		Yamls:          []confapi.YamlPatch{},

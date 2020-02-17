@@ -173,7 +173,7 @@ func (r *Resolver) Unmarshal(src string, dst interface{}) error {
 }
 
 func (r *Resolver) GetBytes(goGetterSrc string) ([]byte, error) {
-	f, err := r.Fetch(goGetterSrc)
+	f, err := r.FetchFile(goGetterSrc)
 	if err != nil {
 		return nil, err
 	}
@@ -186,11 +186,28 @@ func (r *Resolver) GetBytes(goGetterSrc string) ([]byte, error) {
 	return bytes, nil
 }
 
-// Resolve takes an URL to a remote file or a path to a local file.
+// ResolveFile takes an URL to a remote file or a path to a local file.
+//
 // If the argument was an URL, it fetches the remote directory contained within the URL,
 // and returns the path to the file in the fetched directory
-func (r *Resolver) Resolve(urlOrPath string) (string, error) {
-	fetched, err := r.Fetch(urlOrPath)
+func (r *Resolver) ResolveFile(urlOrPath string) (string, error) {
+	fetched, err := r.FetchFile(urlOrPath)
+	if err != nil {
+		switch err.(type) {
+		case InvalidURLError:
+			return urlOrPath, nil
+		}
+		return "", err
+	}
+	return fetched, nil
+}
+
+// ResolveDir takes an URL to a remote directory or a path to a local directory.
+//
+// If the argument was an URL, it fetches the remote directory contained within the URL,
+// and returns the path to the the fetched directory
+func (r *Resolver) ResolveDir(urlOrPath string) (string, error) {
+	fetched, err := r.FetchDir(urlOrPath)
 	if err != nil {
 		switch err.(type) {
 		case InvalidURLError:
@@ -264,10 +281,32 @@ func Parse(goGetterSrc string) (*Source, error) {
 	}, nil
 }
 
-func (r *Resolver) Fetch(goGetterSrc string) (string, error) {
-	u, err := Parse(goGetterSrc)
+func (r *Resolver) FetchFile(goGetterSrc string) (string, error) {
+	u, vfsLocalCopyDir, err := r.fetchSource(goGetterSrc)
+
 	if err != nil {
 		return "", err
+	}
+
+	file := u.File
+
+	return filepath.Join(vfsLocalCopyDir, file), nil
+}
+
+func (r *Resolver) FetchDir(goGetterSrc string) (string, error) {
+	_, vfsLocalCopyDir, err := r.fetchSource(goGetterSrc)
+
+	if err != nil {
+		return "", err
+	}
+
+	return vfsLocalCopyDir, nil
+}
+
+func (r *Resolver) fetchSource(goGetterSrc string) (*Source, string, error) {
+	u, err := Parse(goGetterSrc)
+	if err != nil {
+		return nil, "", err
 	}
 
 	query := u.RawQuery
@@ -275,8 +314,6 @@ func (r *Resolver) Fetch(goGetterSrc string) (string, error) {
 	if len(query) != 0 {
 		getterSrc = strings.Join([]string{getterSrc, query}, "?")
 	}
-
-	file := u.File
 
 	r.Logger.V(1).Info("fetching", "getter", u.Getter, "scheme", u.Scheme, "host", u.Host, "dir", u.Dir, "file", u.File)
 
@@ -293,7 +330,7 @@ func (r *Resolver) Fetch(goGetterSrc string) (string, error) {
 
 	{
 		if r.FileExists(vfsLocalCopyDir) {
-			return "", fmt.Errorf("%s is not directory. please remove it so that variant could use it for dependency caching", getterDstDir)
+			return nil, "", fmt.Errorf("%s is not directory. please remove it so that variant could use it for dependency caching", getterDstDir)
 		}
 
 		if r.DirExists(vfsLocalCopyDir) {
@@ -312,7 +349,7 @@ func (r *Resolver) Fetch(goGetterSrc string) (string, error) {
 		// go-getter silently fails when the destination directory already exists.
 		// So we create directories down to the parent directory of the target.
 		if err := vfs.MkdirAll(r.fs, filepath.Dir(vfsLocalCopyDir), 0755); err != nil {
-			return "", err
+			return nil, "", err
 		}
 
 		var getterDst string
@@ -328,13 +365,13 @@ func (r *Resolver) Fetch(goGetterSrc string) (string, error) {
 
 		if err := r.Getter.Get(r.GoGetterHome, getterSrc, getterDst, fileMode); err != nil {
 			if err2 := r.fs.RemoveAll(vfsLocalCopyDir); err2 != nil {
-				return "", err2
+				return nil, "", err2
 			}
-			return "", err
+			return nil, "", err
 		}
 	}
 
-	return filepath.Join(vfsLocalCopyDir, file), nil
+	return u, vfsLocalCopyDir, nil
 }
 
 type Getter interface {

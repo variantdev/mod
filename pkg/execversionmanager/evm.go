@@ -224,7 +224,7 @@ func (p *ExecVM) getPlatformSpecificBin(name string, platform Platform) (*Bin, e
 			return nil, err
 		}
 
-		localCopy, err = p.dep.Resolve(source)
+		localCopy, err = p.dep.ResolveFile(source)
 		if err != nil {
 			return nil, err
 		}
