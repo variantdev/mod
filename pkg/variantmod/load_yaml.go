@@ -71,8 +71,10 @@ func (m *ModuleLoader) loadYamlModule(params confapi.ModuleParams) (*confapi.Mod
 
 	dependencies := map[string]confapi.Dependency{}
 	for alias, dep := range spec.Dependencies {
+		releaseFrom := yamlconf.ToVersionsFrom(dep.ReleasesFrom)
+
 		dependencies[alias] = confapi.Dependency{
-			ReleasesFrom:      yamlconf.ToVersionsFrom(dep.ReleasesFrom),
+			ReleasesFrom:      releaseFrom,
 			Source:            dep.Source,
 			Kind:              dep.Kind,
 			VersionConstraint: dep.VersionConstraint,
@@ -81,6 +83,8 @@ func (m *ModuleLoader) loadYamlModule(params confapi.ModuleParams) (*confapi.Mod
 			LockedVersions:    dep.LockedVersions,
 			ForceUpdate:       dep.ForceUpdate,
 		}
+
+		releases[alias] = confapi.Release{VersionsFrom: releaseFrom}
 	}
 
 	execs := map[string]confapi.Executable{}
