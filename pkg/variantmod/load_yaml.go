@@ -84,7 +84,9 @@ func (m *ModuleLoader) loadYamlModule(params confapi.ModuleParams) (*confapi.Mod
 			ForceUpdate:       dep.ForceUpdate,
 		}
 
-		releases[alias] = confapi.Release{VersionsFrom: releaseFrom}
+		if _, ok := releases[alias]; !ok {
+			releases[alias] = confapi.Release{VersionsFrom: releaseFrom}
+		}
 	}
 
 	execs := map[string]confapi.Executable{}
