@@ -1,6 +1,7 @@
 package variantmod
 
 import (
+	"fmt"
 	"github.com/go-logr/logr"
 	"github.com/k-kinzal/aliases/pkg/aliases/yaml"
 	"github.com/twpayne/go-vfs"
@@ -126,6 +127,10 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 
 	// Resolve versions of dependencies
 	for alias, dep := range mod.Dependencies {
+		if dep.Kind == "Module" {
+			continue
+		}
+
 		preUp, ok := verLock.Dependencies[alias]
 		if ok {
 			if params.ForceUpdate {
@@ -135,7 +140,7 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 					m.Logger.V(2).Info("tracker found", "alias", alias)
 					rel, err := tracker.Latest(dep.VersionConstraint)
 					if err != nil {
-						return nil, err
+						return nil, fmt.Errorf("resolving dependency %q: %w", alias, err)
 					}
 
 					if preUp.Version == rel.Version {
@@ -163,7 +168,7 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 				m.Logger.V(2).Info("tracker found", "alias", alias)
 				rel, err := tracker.Latest(dep.VersionConstraint)
 				if err != nil {
-					return nil, err
+					return nil, fmt.Errorf("updating locked dependency %q: %w", alias, err)
 				}
 				vals[alias] = Values{"version": rel.Version}
 
