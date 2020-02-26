@@ -451,7 +451,8 @@ func (m *ModuleManager) doUp() (*Module, error) {
 		return nil, err
 	}
 
-	fmt.Fprintf(os.Stderr, "up: %+v\n", mod)
+	m.Logger.V(2).Info(fmt.Sprintf("up: %+v\n", mod))
+
 	return mod, nil
 }
 
@@ -494,25 +495,25 @@ func mergeByOverwrite(src ...Values) (res Values) {
 	res = Values{}
 	defer func() {
 		if res != nil {
-			klog.V(0).Infof("mergeByOverwrite: src=%v, res=%v", src, res)
+			klog.V(1).Infof("mergeByOverwrite: src=%v, res=%v", src, res)
 		}
 	}()
 	for _, s := range src {
 		for k, v := range s {
-			klog.V(0).Infof("mergeByOverwrite: k=%v, v=%v(%T)", k, v, v)
+			klog.V(1).Infof("mergeByOverwrite: k=%v, v=%v(%T)", k, v, v)
 			switch typedV := v.(type) {
 			case map[string]interface{}, Values:
 				_, ok := res[k]
 				if ok {
 					switch typedDestV := res[k].(type) {
 					case map[string]interface{}:
-						klog.V(0).Infof("mergeByOverwrite: map[string]interface{}: %v", typedDestV)
+						klog.V(1).Infof("mergeByOverwrite: map[string]interface{}: %v", typedDestV)
 						res[k] = mergeByOverwrite(typedDestV, typedV.(Values))
 					case Values:
-						klog.V(0).Infof("mergeByOverwrite: Values: %v", typedDestV)
+						klog.V(1).Infof("mergeByOverwrite: Values: %v", typedDestV)
 						res[k] = mergeByOverwrite(typedDestV, typedV.(Values))
 					default:
-						klog.V(0).Infof("mergeByOverwrite: default: %v", typedDestV)
+						klog.V(1).Infof("mergeByOverwrite: default: %v", typedDestV)
 						res[k] = typedDestV
 					}
 				} else {
