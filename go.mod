@@ -3,14 +3,12 @@ module github.com/variantdev/mod
 go 1.12
 
 require (
-	github.com/Masterminds/semver v1.4.2
+	github.com/Masterminds/semver v1.5.0
 	github.com/PaesslerAG/gval v1.0.1 // indirect
 	github.com/PaesslerAG/jsonpath v0.1.0
 	github.com/creasty/defaults v1.3.0 // indirect
 	github.com/evanphx/json-patch v4.5.0+incompatible
 	github.com/go-logr/logr v0.1.0
-	github.com/go-playground/locales v0.12.1 // indirect
-	github.com/go-playground/universal-translator v0.16.0 // indirect
 	github.com/golang/protobuf v1.3.1 // indirect
 	github.com/google/go-cmp v0.3.1
 	github.com/google/go-github/v27 v27.0.4
@@ -20,9 +18,8 @@ require (
 	github.com/heroku/docker-registry-client v0.0.0-20190909225348-afc9e1acc3d5
 	github.com/iancoleman/strcase v0.0.0-20190422225806-e506e3ef7365 // indirect
 	github.com/imdario/mergo v0.3.8 // indirect
-	github.com/k-kinzal/aliases v0.3.1
+	github.com/k-kinzal/aliases v0.5.0
 	github.com/kylelemons/godebug v1.1.0
-	github.com/leodido/go-urn v1.1.0 // indirect
 	github.com/spf13/cobra v0.0.5
 	github.com/spf13/pflag v1.0.3
 	github.com/twpayne/go-vfs v1.2.0

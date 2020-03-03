@@ -32,6 +32,8 @@ func (m *ExecVM) getDockerAlias(name string, platform Platform) (string, error) 
 		return "", err
 	}
 
+	dockerRunConf.EnvPrefix = append(dockerRunConf.EnvPrefix, strings.ToUpper(name) + "_")
+
 	aliasesConfMap := map[string]interface{}{
 		name: dockerRunConf,
 	}
