@@ -180,6 +180,8 @@ github.com/k-kinzal/aliases v0.3.1 h1:oMJo0MWNYdKvy55xomYy+LGHbHuoLObwxvhrVGC778
 github.com/k-kinzal/aliases v0.3.1/go.mod h1:oGirm+fBXFqgRvUasjoyh5SEkVfVuYj70qcJX3eLfwU=
 github.com/k-kinzal/aliases v0.5.0 h1:7qQaH8gceUFPAj5dRp3UkW2CySYP5YcMdoUbgdYICFk=
 github.com/k-kinzal/aliases v0.5.0/go.mod h1:cQLBq3SmKKJ5vRBqprDgusJr9gphkpv6UDAOm/sEGu0=
+github.com/k-kinzal/aliases v0.5.1 h1:Tp36Vh7pxaMBNtBzHWmoiBtb+9XQLUW+XDjHQuoT6TQ=
+github.com/k-kinzal/aliases v0.5.1/go.mod h1:cQLBq3SmKKJ5vRBqprDgusJr9gphkpv6UDAOm/sEGu0=
 github.com/kisielk/gotool v0.0.0-20161130080628-0de1eaf82fa3/go.mod h1:jxZFDH7ILpTPQTk+E2s+z4CUas9lVNjIuKR4c5/zKgM=
 github.com/kisielk/gotool v1.0.0/go.mod h1:XhKaO+MFFWcvkIS/tQcRk01m1F5IRFswLeQ+oQHNcck=
 github.com/klauspost/compress v1.4.0/go.mod h1:RyIbtBH6LamlWaDj8nUwkbUhJ87Yi3uG0guNDohfE1A=

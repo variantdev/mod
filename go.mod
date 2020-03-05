@@ -18,7 +18,7 @@ require (
 	github.com/heroku/docker-registry-client v0.0.0-20190909225348-afc9e1acc3d5
 	github.com/iancoleman/strcase v0.0.0-20190422225806-e506e3ef7365 // indirect
 	github.com/imdario/mergo v0.3.8 // indirect
-	github.com/k-kinzal/aliases v0.5.0
+	github.com/k-kinzal/aliases v0.5.1
 	github.com/kylelemons/godebug v1.1.0
 	github.com/spf13/cobra v0.0.5
 	github.com/spf13/pflag v1.0.3
