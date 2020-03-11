@@ -36,7 +36,13 @@ func HCLModuleAsConfModule(mod hclconf.Module) (*confapi.Module, error) {
 	deps := map[string]confapi.Dependency{}
 	for i := range mod.Dependencies {
 		d := mod.Dependencies[i]
+
 		provider := confapi.VersionsFrom{}
+
+		if d.ValidVersionPattern != nil {
+			provider.ValidVersionPattern = *d.ValidVersionPattern
+		}
+
 		switch d.Type {
 		case "exec":
 			var e hclconf.ExecDependency

@@ -29,6 +29,8 @@ type VersionsFrom struct {
 	GitHubTags      GitHubTags      `yaml:"githubTags"`
 	GitHubReleases  GitHubReleases  `yaml:"githubReleases"`
 	DockerImageTags DockerImageTags `yaml:"dockerImageTags"`
+
+	ValidVersionPattern string `yaml:"validVersionPattern"`
 }
 
 func (f VersionsFrom) IsDefined() bool {
@@ -52,6 +54,7 @@ func ToVersionsFrom(v VersionsFrom) confapi.VersionsFrom {
 	r.JSONPath.Source = NewRender("jsonPath.source", v.JSONPath.Source)
 	r.JSONPath.Description = v.JSONPath.Description
 	r.JSONPath.Versions = v.JSONPath.Versions
+	r.ValidVersionPattern = v.ValidVersionPattern
 	return r
 }
 

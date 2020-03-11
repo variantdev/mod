@@ -1,6 +1,8 @@
 package confapi
 
-import "github.com/k-kinzal/aliases/pkg/aliases/yaml"
+import (
+	"github.com/k-kinzal/aliases/pkg/aliases/yaml"
+)
 
 type Module struct {
 	Name           string
@@ -70,7 +72,8 @@ type Dependency struct {
 	Kind   string
 	// VersionConstraint is the version range for this dependency. Works only for modules hosted on Git or GitHub
 	VersionConstraint string
-	Arguments         func(map[string]interface{}) (map[string]interface{}, error)
+
+	Arguments func(map[string]interface{}) (map[string]interface{}, error)
 
 	Alias          string
 	LockedVersions ModVersionLock
@@ -134,6 +137,10 @@ type VersionsFrom struct {
 	GitHubTags      GitHubTags
 	GitHubReleases  GitHubReleases
 	DockerImageTags DockerImageTags
+
+	// ValidVersionPattern is the regular expression that should match only against valid version numbers for this dependency.
+	// Used for filtering out unnecessary, unexpected or invalid version numbers from being used for dependency updates.
+	ValidVersionPattern string
 }
 
 type Exec struct {

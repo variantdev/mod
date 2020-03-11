@@ -24,6 +24,8 @@ type Dependency struct {
 
 	Version string `hcl:"version,attr"`
 
+	ValidVersionPattern *string `hcl:"valid_version_pattern,attr"`
+
 	BodyForType hcl2.Body `hcl:",remain"`
 }
 

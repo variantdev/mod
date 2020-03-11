@@ -1,5 +1,7 @@
 package releasetracker
 
+import "regexp"
+
 type Config struct {
 	ReleaseChannel Spec `yaml:"releaseChannel"`
 }
@@ -15,6 +17,8 @@ type VersionsFrom struct {
 	GitHubTags      GitHubTags      `yaml:"githubTags"`
 	GitHubReleases  GitHubReleases  `yaml:"githubReleases"`
 	DockerImageTags DockerImageTags `yaml:"dockerImageTags"`
+
+	ValidVersionPattern *regexp.Regexp
 }
 
 type Exec struct {

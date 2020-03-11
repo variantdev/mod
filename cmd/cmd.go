@@ -69,7 +69,7 @@ func New(log logr.Logger) *cobra.Command {
 	}
 
 	modlistdepver := &cobra.Command{
-		Use:  "list-dependency-versions",
+		Use:  "list-dependency-versions DEPENDENCY_NAME",
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			man, err := newVariantMod()

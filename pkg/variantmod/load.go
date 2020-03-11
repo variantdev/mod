@@ -10,6 +10,7 @@ import (
 	"github.com/variantdev/mod/pkg/depresolver"
 	"github.com/variantdev/mod/pkg/execversionmanager"
 	"github.com/variantdev/mod/pkg/releasetracker"
+	"regexp"
 	"strings"
 )
 
@@ -108,6 +109,15 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 			r.VersionsFrom.JSONPath.Description = dep.VersionsFrom.JSONPath.Description
 			r.VersionsFrom.JSONPath.Versions = dep.VersionsFrom.JSONPath.Versions
 		}
+
+		if dep.VersionsFrom.ValidVersionPattern != "" {
+			validVerPattern, err := regexp.Compile(dep.VersionsFrom.ValidVersionPattern)
+			if err != nil {
+				return nil, err
+			}
+			r.VersionsFrom.ValidVersionPattern = validVerPattern
+		}
+
 		var rc *releasetracker.Tracker
 		rc, err = releasetracker.New(
 			r,

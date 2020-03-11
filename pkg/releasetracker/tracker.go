@@ -623,5 +623,22 @@ func (p *Tracker) GetReleases() ([]*Release, error) {
 		return nil, err
 	}
 
-	return pp.All()
+	all, err := pp.All()
+	if err != nil {
+		return nil, err
+	}
+
+	if p.Spec.VersionsFrom.ValidVersionPattern == nil {
+		return all, err
+	}
+
+	var filtered []*Release
+
+	for _, r := range all {
+		if p.Spec.VersionsFrom.ValidVersionPattern.MatchString(r.Version) {
+			filtered = append(filtered, r)
+		}
+	}
+
+	return filtered, nil
 }
