@@ -157,7 +157,7 @@ func (p *Tracker) Latest(constraint string) (*Release, error) {
 
 func getLatest(constraint string, all []*Release) (*Release, error) {
 	if constraint == "" {
-		constraint = "> 0.0.0"
+		constraint = "> 0.0.0-0"
 	}
 
 	cons, err := semver.NewConstraint(constraint)
@@ -174,6 +174,7 @@ func getLatest(constraint string, all []*Release) (*Release, error) {
 		if !cons.Check(r.Semver) {
 			continue
 		}
+
 		if latestVer.LessThan(r.Semver) {
 			latestVer = *r.Semver
 			latest = r
@@ -634,7 +635,9 @@ func (p *Tracker) GetReleases() ([]*Release, error) {
 
 	var filtered []*Release
 
-	for _, r := range all {
+	for i := range all {
+		r := all[i]
+
 		if p.Spec.VersionsFrom.ValidVersionPattern.MatchString(r.Version) {
 			filtered = append(filtered, r)
 		}
