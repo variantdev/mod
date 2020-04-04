@@ -227,8 +227,8 @@ func (e InvalidURLError) Error() string {
 }
 
 type Source struct {
-	Getter, Scheme, Host, Dir, File, RawQuery string
-	IsFileMode                                bool
+	Getter, Scheme, User, Host, Dir, File, RawQuery string
+	IsFileMode                                      bool
 }
 
 func IsRemote(goGetterSrc string) bool {
@@ -273,6 +273,7 @@ func Parse(goGetterSrc string) (*Source, error) {
 	return &Source{
 		Getter:     getter,
 		Scheme:     u.Scheme,
+		User:       u.User.String(),
 		Host:       u.Host,
 		Dir:        dir,
 		File:       file,
@@ -310,7 +311,15 @@ func (r *Resolver) fetchSource(goGetterSrc string) (*Source, string, error) {
 	}
 
 	query := u.RawQuery
-	getterSrc := fmt.Sprintf("%s://%s%s", u.Scheme, u.Host, u.Dir)
+
+	var getterSrc string
+
+	if u.User == "" {
+		getterSrc = fmt.Sprintf("%s://%s%s", u.Scheme, u.Host, u.Dir)
+	} else {
+		getterSrc = fmt.Sprintf("%s://%s@%s%s", u.Scheme, u.User, u.Host, u.Dir)
+	}
+
 	if len(query) != 0 {
 		getterSrc = strings.Join([]string{getterSrc, query}, "?")
 	}
