@@ -9,11 +9,10 @@ require (
 	github.com/creasty/defaults v1.3.0 // indirect
 	github.com/evanphx/json-patch v4.5.0+incompatible
 	github.com/go-logr/logr v0.1.0
-	github.com/golang/protobuf v1.3.1 // indirect
 	github.com/google/go-cmp v0.3.1
 	github.com/google/go-github/v27 v27.0.4
 	github.com/hashicorp/go-cleanhttp v0.5.1 // indirect
-	github.com/hashicorp/go-getter v1.3.0
+	github.com/hashicorp/go-getter v1.4.1
 	github.com/hashicorp/hcl/v2 v2.3.0
 	github.com/heroku/docker-registry-client v0.0.0-20190909225348-afc9e1acc3d5
 	github.com/iancoleman/strcase v0.0.0-20190422225806-e506e3ef7365 // indirect
@@ -27,9 +26,8 @@ require (
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/xeipuuv/gojsonschema v1.1.0
 	github.com/zclconf/go-cty v1.2.0
-	golang.org/x/net v0.0.0-20190620200207-3b0461eec859 // indirect
-	golang.org/x/oauth2 v0.0.0-20181203162652-d668ce993890
-	google.golang.org/genproto v0.0.0-20190404172233-64821d5d2107 // indirect
+	golang.org/x/build v0.0.0-20190111050920-041ab4dc3f9d // indirect
+	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 	google.golang.org/grpc v1.22.0 // indirect
 	gopkg.in/go-playground/assert.v1 v1.2.1 // indirect
 	gopkg.in/go-playground/validator.v9 v9.30.0 // indirect
