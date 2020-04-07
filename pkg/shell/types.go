@@ -10,6 +10,9 @@ type Command struct {
 	Stdout, Stderr io.Writer
 	Stdin          io.Reader
 	Env            map[string]string
+
+	// Dir is the working directory of this command
+	Dir string
 }
 
 type Exec func(*Command) Result

@@ -13,6 +13,11 @@ func DefaultExec(c *Command) Result {
 		env = append(env, fmt.Sprintf("%s=%s", n, v))
 	}
 	cmd.Env = env
+
+	if c.Dir != "" {
+		cmd.Dir = c.Dir
+	}
+
 	if c.Stdin != nil {
 		cmd.Stdin = c.Stdin
 	}
