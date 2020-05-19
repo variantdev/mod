@@ -502,16 +502,33 @@ func mergeByOverwrite(src ...Values) (res Values) {
 		for k, v := range s {
 			klog.V(1).Infof("mergeByOverwrite: k=%v, v=%v(%T)", k, v, v)
 			switch typedV := v.(type) {
-			case map[string]interface{}, Values:
+			case Values:
 				_, ok := res[k]
 				if ok {
 					switch typedDestV := res[k].(type) {
 					case map[string]interface{}:
 						klog.V(1).Infof("mergeByOverwrite: map[string]interface{}: %v", typedDestV)
-						res[k] = mergeByOverwrite(typedDestV, typedV.(Values))
+						res[k] = mergeByOverwrite(typedDestV, typedV)
 					case Values:
 						klog.V(1).Infof("mergeByOverwrite: Values: %v", typedDestV)
-						res[k] = mergeByOverwrite(typedDestV, typedV.(Values))
+						res[k] = mergeByOverwrite(typedDestV, typedV)
+					default:
+						klog.V(1).Infof("mergeByOverwrite: default: %v", typedDestV)
+						res[k] = typedDestV
+					}
+				} else {
+					res[k] = typedV
+				}
+			case map[string]interface{}:
+				_, ok := res[k]
+				if ok {
+					switch typedDestV := res[k].(type) {
+					case map[string]interface{}:
+						klog.V(1).Infof("mergeByOverwrite: map[string]interface{}: %v", typedDestV)
+						res[k] = mergeByOverwrite(typedDestV, typedV)
+					case Values:
+						klog.V(1).Infof("mergeByOverwrite: Values: %v", typedDestV)
+						res[k] = mergeByOverwrite(typedDestV, typedV)
 					default:
 						klog.V(1).Infof("mergeByOverwrite: default: %v", typedDestV)
 						res[k] = typedDestV
@@ -580,17 +597,17 @@ func (m *ModuleManager) buildModule(mod *Module) (r *BuildResult, err error) {
 			return nil, err
 		}
 
-		tmpls := map[string]struct{
-			pat *regexp.Regexp
+		tmpls := map[string]struct {
+			pat  *regexp.Regexp
 			tmpl confapi.Template
 		}{}
 
 		for _, v := range d.Templates {
-			tmpls[v.SourcePattern] =  struct{
-				pat *regexp.Regexp
+			tmpls[v.SourcePattern] = struct {
+				pat  *regexp.Regexp
 				tmpl confapi.Template
 			}{
-				pat: regexp.MustCompile(v.SourcePattern),
+				pat:  regexp.MustCompile(v.SourcePattern),
 				tmpl: v,
 			}
 		}
@@ -615,15 +632,15 @@ func (m *ModuleManager) buildModule(mod *Module) (r *BuildResult, err error) {
 		}
 
 		err = vfs.Walk(m.fs, srcDir, func(path string, info os.FileInfo, err error) error {
-		 	if err != nil {
-		 		return fmt.Errorf("%s: %v", path, err)
+			if err != nil {
+				return fmt.Errorf("%s: %v", path, err)
 			}
 
-		 	if info.IsDir() {
-		 		return nil
+			if info.IsDir() {
+				return nil
 			}
 
-			for _, v:= range tmpls {
+			for _, v := range tmpls {
 				matches := v.pat.FindStringSubmatch(path)
 
 				contents, err := m.fs.ReadFile(path)

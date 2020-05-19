@@ -87,12 +87,20 @@ type ModVersionLock struct {
 }
 
 type DepVersionLock struct {
-	Version         string `yaml:"version"`
-	PreviousVersion string `yaml:"previousVersion,omitempty"`
+	Version         string                 `yaml:"version"`
+	PreviousVersion string                 `yaml:"previousVersion,omitempty"`
+	Meta            map[string]interface{} `yaml:",inline"`
 }
 
 func (l ModVersionLock) ToMap() map[string]interface{} {
-	return map[string]interface{}{"Dependencies": l.ToDepsMap(), "RawLock": l.RawLock}
+	deps := l.ToDepsMap()
+	m := map[string]interface{}{"Dependencies": deps, "RawLock": l.RawLock}
+
+	for k, v := range deps {
+		m[k] = v
+	}
+
+	return m
 }
 
 func (l ModVersionLock) ToDepsMap() map[string]interface{} {
@@ -101,6 +109,9 @@ func (l ModVersionLock) ToDepsMap() map[string]interface{} {
 		m := map[string]interface{}{"version": v.Version}
 		if v.PreviousVersion != "" {
 			m["previousVersion"] = v.PreviousVersion
+		}
+		for kk, vv := range v.Meta {
+			m[kk] = vv
 		}
 		deps[k] = m
 	}
