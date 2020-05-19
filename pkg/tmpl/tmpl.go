@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/Masterminds/sprig"
 	"strings"
 	"text/template"
 )
@@ -28,7 +29,13 @@ func Render(name, text string, data interface{}) (string, error) {
 			return hex.EncodeToString(b[:])
 		},
 	}
-	tpl := template.New(name).Option("missingkey=error").Funcs(funcs)
+
+	funcMap := sprig.TxtFuncMap()
+	for name, f := range funcs {
+		funcMap[name] = f
+	}
+
+	tpl := template.New(name).Option("missingkey=error").Funcs(funcMap)
 	tpl, err := tpl.Parse(text)
 	if err != nil {
 		return "", err
