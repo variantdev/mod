@@ -1,0 +1,84 @@
+dependencies:
+  fluentd:
+    version: 1.10.4-windows-1.0
+  kfo:
+    version: 1.12.0
+    githubRelease:
+      assets:
+      - browser_download_url: https://github.com/vmware/kube-fluentd-operator/releases/download/v1.12.0/log-router-0.3.3.tgz
+        content_type: application/gzip
+        created_at: "2020-05-12T18:17:48Z"
+        download_count: 146
+        id: 20663139
+        label: null
+        name: log-router-0.3.3.tgz
+        node_id: MDEyOlJlbGVhc2VBc3NldDIwNjYzMTM5
+        size: 3209
+        state: uploaded
+        updated_at: "2020-05-12T18:17:50Z"
+        uploader:
+          avatar_url: https://avatars1.githubusercontent.com/u/27411254?v=4
+          events_url: https://api.github.com/users/dimalbaby/events{/privacy}
+          followers_url: https://api.github.com/users/dimalbaby/followers
+          following_url: https://api.github.com/users/dimalbaby/following{/other_user}
+          gists_url: https://api.github.com/users/dimalbaby/gists{/gist_id}
+          gravatar_id: ""
+          html_url: https://github.com/dimalbaby
+          id: 27411254
+          login: dimalbaby
+          node_id: MDQ6VXNlcjI3NDExMjU0
+          organizations_url: https://api.github.com/users/dimalbaby/orgs
+          received_events_url: https://api.github.com/users/dimalbaby/received_events
+          repos_url: https://api.github.com/users/dimalbaby/repos
+          site_admin: false
+          starred_url: https://api.github.com/users/dimalbaby/starred{/owner}{/repo}
+          subscriptions_url: https://api.github.com/users/dimalbaby/subscriptions
+          type: User
+          url: https://api.github.com/users/dimalbaby
+        url: https://api.github.com/repos/vmware/kube-fluentd-operator/releases/assets/20663139
+      assets_url: https://api.github.com/repos/vmware/kube-fluentd-operator/releases/26170360/assets
+      author:
+        avatar_url: https://avatars1.githubusercontent.com/u/27411254?v=4
+        events_url: https://api.github.com/users/dimalbaby/events{/privacy}
+        followers_url: https://api.github.com/users/dimalbaby/followers
+        following_url: https://api.github.com/users/dimalbaby/following{/other_user}
+        gists_url: https://api.github.com/users/dimalbaby/gists{/gist_id}
+        gravatar_id: ""
+        html_url: https://github.com/dimalbaby
+        id: 27411254
+        login: dimalbaby
+        node_id: MDQ6VXNlcjI3NDExMjU0
+        organizations_url: https://api.github.com/users/dimalbaby/orgs
+        received_events_url: https://api.github.com/users/dimalbaby/received_events
+        repos_url: https://api.github.com/users/dimalbaby/repos
+        site_admin: false
+        starred_url: https://api.github.com/users/dimalbaby/starred{/owner}{/repo}
+        subscriptions_url: https://api.github.com/users/dimalbaby/subscriptions
+        type: User
+        url: https://api.github.com/users/dimalbaby
+      body: "* Build image on photon (#115 ) (@dimalbaby)\r\n\r\n* Plugins: Add `fluent-plugin-vmware-loginsight`
+        (@naveens)\r\n\r\n* Plugins: Add `fluent-plugin-grafana-loki` (@SerialVelocity)\r\n\r\n*
+        Plugins: update to latest compatible versions (@dimalbaby)\r\n\r\n* Core:
+        Cleanup unused namespace configuration files (#110) (@tommasopozzetti)\r\n\r\n*
+        Core: Fix labels not being rewritten in copy plugin (#86) (@tommasopozzetti)\r\n\r\n*
+        Core: Fix $label processor ignoring errors and not accepting \"/\" (#93) (@tommasopozzetti)\r\n\r\n*
+        Core: Fix namespace fluentd status annotation update (#92) (@tommasopozzetti)\r\n\r\n*
+        Core: Fix slow CRI-O log parsing (#91) (@jonasrutishauser)\r\n\r\n* Core:
+        Introduce a more efficient event-triggered reload system (#89)  (@tommasopozzetti)\r\n\r\n*
+        Core: Add new processor to allow controlled tag rewriting (#88) (@tommasopozzetti)\r\n\r\n*
+        Helm: improve Helm chart and bump version to 0.3.3 (#95) (@cablespaghetti)\r\n\r\n*
+        Fluentd: upgrade fluentd to 1.9.1"
+      created_at: "2020-05-12T18:29:59Z"
+      draft: false
+      html_url: https://github.com/vmware/kube-fluentd-operator/releases/tag/v1.12.0
+      id: 26170360
+      name: v1.12.0
+      node_id: MDc6UmVsZWFzZTI2MTcwMzYw
+      prerelease: false
+      published_at: "2020-05-12T18:33:19Z"
+      tag_name: v1.12.0
+      tarball_url: https://api.github.com/repos/vmware/kube-fluentd-operator/tarball/v1.12.0
+      target_commitish: master
+      upload_url: https://uploads.github.com/repos/vmware/kube-fluentd-operator/releases/26170360/assets{?name,label}
+      url: https://api.github.com/repos/vmware/kube-fluentd-operator/releases/26170360
+      zipball_url: https://api.github.com/repos/vmware/kube-fluentd-operator/zipball/v1.12.0
