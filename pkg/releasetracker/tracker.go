@@ -33,6 +33,9 @@ type Release struct {
 	Version string
 
 	Description string
+
+	// Meta is the provider-specific metadata composed of arbitrary kv pairs
+	Meta map[string]interface{}
 }
 
 type Tracker struct {
@@ -233,9 +236,12 @@ func newGitHubReleasesProvider(spec GitHubReleases, r *Tracker) *httpJsonPathPro
 	url := fmt.Sprintf("https://%s/repos/%s/releases", host, spec.Source)
 
 	return &httpJsonPathProvider{
-		url:      url,
-		jsonpath: "$[*].tag_name",
-		runtime:  r,
+		url:         url,
+		jsonpath:    "$[*].tag_name",
+		metaKey:     "githubRelease",
+		objectPath:  "$[*]",
+		versionPath: "tag_name",
+		runtime:     r,
 	}
 }
 
@@ -331,13 +337,17 @@ type httpJsonPathProvider struct {
 	nextpagePath  string
 	params        map[string]string
 
+	metaKey     string
+	objectPath  string
+	versionPath string
+
 	runtime *Tracker
 }
 
 var _ ReleaseProvider = &httpJsonPathProvider{}
 
 func (p *httpJsonPathProvider) All() ([]*Release, error) {
-	return p.runtime.releasesFromHttpJsonPath(p.url, p.jsonpath, p.nextpagePath, p.params)
+	return p.runtime.releasesFromHttpJsonPath(p)
 }
 
 func (p *Tracker) execScript(cmd string) ([]string, error) {
@@ -403,7 +413,12 @@ func (p *Tracker) releasesFromGetterJsonPath(spec GetterJSONPath) ([]*Release, e
 	return p.extractVersions(tmp, spec.Versions)
 }
 
-func (p *Tracker) releasesFromHttpJsonPath(url string, jpath string, nextpagePath string, params map[string]string) ([]*Release, error) {
+func (p *Tracker) releasesFromHttpJsonPath(pp *httpJsonPathProvider) ([]*Release, error) {
+	url := pp.url
+	jpath := pp.jsonpath
+	nextpagePath := pp.nextpagePath
+	params := pp.params
+
 	query := ""
 	for k, v := range params {
 		if query != "" {
@@ -438,12 +453,21 @@ func (p *Tracker) releasesFromHttpJsonPath(url string, jpath string, nextpagePat
 
 		debug("http response: %v", res)
 
-		page, err := p.extractVersions(tmp, jpath)
-		if err != nil {
-			return nil, err
-		}
+		if pp.objectPath != "" && pp.versionPath != "" && pp.metaKey != "" {
+			page, err := p.extractObjects(tmp, pp.objectPath, pp.versionPath, pp.metaKey)
+			if err != nil {
+				return nil, err
+			}
 
-		releases = append(releases, page...)
+			releases = append(releases, page...)
+		} else {
+			page, err := p.extractVersions(tmp, jpath)
+			if err != nil {
+				return nil, err
+			}
+
+			releases = append(releases, page...)
+		}
 
 		if nextpagePath == "" {
 			break
@@ -458,6 +482,56 @@ func (p *Tracker) releasesFromHttpJsonPath(url string, jpath string, nextpagePat
 	}
 
 	return releases, nil
+}
+
+func (p *Tracker) extractObjects(tmp interface{}, objPath, verPath, metaKey string) ([]*Release, error) {
+	v, err := maputil.RecursivelyCastKeysToStrings(tmp)
+	if err != nil {
+		return nil, err
+	}
+
+	got, err := jsonpath.Get(objPath, v)
+	if err != nil {
+		return nil, err
+	}
+
+	var rs []*Release
+
+	switch typed := got.(type) {
+	case []interface{}:
+		for _, obj := range typed {
+			raw, err := jsonpath.Get(verPath, obj)
+			if err != nil {
+				return nil, err
+			}
+
+			s, ok := raw.(string)
+			if !ok {
+				return nil, fmt.Errorf("unexpected type of value: want string, got %T, value is %v", raw, raw)
+			}
+
+			v, err := p.parseVersion(s)
+			if err != nil {
+				return nil, err
+			}
+
+			meta := map[string]interface{}{
+				metaKey: obj,
+			}
+
+			rs = append(rs, &Release{
+				Semver: v,
+				Version: strings.TrimPrefix(s, "v"),
+				Meta: meta,
+			})
+		}
+	}
+
+	sort.Slice(rs, func(i, j int) bool {
+		return rs[i].Semver.LessThan(rs[j].Semver)
+	})
+
+	return rs, nil
 }
 
 func (p *Tracker) extractVersions(tmp interface{}, jpath string) ([]*Release, error) {
@@ -572,12 +646,16 @@ func nonSemverWorkaround(s string) string {
 	return s
 }
 
+func (p *Tracker) parseVersion(s string) (*semver.Version, error) {
+	fixedS := nonSemverWorkaround(strings.TrimSpace(s))
+
+	return semver.NewVersion(fixedS)
+}
+
 func (p *Tracker) versionStringsToReleases(vs []string) ([]*Release, error) {
 	rs := []*Release{}
 	for i, s := range vs {
-		fixedS := nonSemverWorkaround(strings.TrimSpace(s))
-
-		v, err := semver.NewVersion(fixedS)
+		v, err := p.parseVersion(s)
 		if err != nil {
 			e := fmt.Errorf("parsing version: index %d: %q: %v", i, s, err)
 			p.Logger.V(1).Info("ignoring error", "err", e)

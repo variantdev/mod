@@ -91,7 +91,8 @@ func New(log logr.Logger) *cobra.Command {
 		if err := man.Checkout(base); err != nil {
 			return err
 		}
-		if err := man.Up(); err != nil {
+		err = man.Up()
+		if err != nil {
 			return err
 		}
 		files := []string{"variant.mod", "variant.lock"}

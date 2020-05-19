@@ -63,7 +63,9 @@ func (m *ModuleLoader) LoadModule(params confapi.ModuleParams) (mod *Module, err
 }
 
 func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Module) (*Module, error) {
-	vals := mergeByOverwrite(Values{}, mod.Defaults, params.Arguments, params.LockedVersions.ToMap())
+	lockValues := params.LockedVersions.ToMap()
+
+	initialValues := mergeByOverwrite(Values{}, mod.Defaults, params.Arguments, lockValues)
 
 	verLock := params.LockedVersions
 
@@ -76,33 +78,33 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 		r.VersionsFrom.Exec.Args = dep.VersionsFrom.Exec.Args
 		r.VersionsFrom.Exec.Command = dep.VersionsFrom.Exec.Command
 		if dep.VersionsFrom.DockerImageTags.Source != nil {
-			r.VersionsFrom.DockerImageTags.Source, err = dep.VersionsFrom.DockerImageTags.Source(vals)
+			r.VersionsFrom.DockerImageTags.Source, err = dep.VersionsFrom.DockerImageTags.Source(initialValues)
 			if err != nil {
 				return nil, err
 			}
 		}
 		if dep.VersionsFrom.GitHubReleases.Source != nil {
-			r.VersionsFrom.GitHubReleases.Source, err = dep.VersionsFrom.GitHubReleases.Source(vals)
+			r.VersionsFrom.GitHubReleases.Source, err = dep.VersionsFrom.GitHubReleases.Source(initialValues)
 			if err != nil {
 				return nil, err
 			}
 			r.VersionsFrom.GitHubReleases.Host = dep.VersionsFrom.GitHubReleases.Host
 		}
 		if dep.VersionsFrom.GitHubTags.Source != nil {
-			r.VersionsFrom.GitHubTags.Source, err = dep.VersionsFrom.GitHubTags.Source(vals)
+			r.VersionsFrom.GitHubTags.Source, err = dep.VersionsFrom.GitHubTags.Source(initialValues)
 			if err != nil {
 				return nil, err
 			}
 			r.VersionsFrom.GitHubTags.Host = dep.VersionsFrom.GitHubTags.Host
 		}
 		if dep.VersionsFrom.GitTags.Source != nil {
-			r.VersionsFrom.GitTags.Source, err = dep.VersionsFrom.GitTags.Source(vals)
+			r.VersionsFrom.GitTags.Source, err = dep.VersionsFrom.GitTags.Source(initialValues)
 			if err != nil {
 				return nil, err
 			}
 		}
 		if dep.VersionsFrom.JSONPath.Source != nil {
-			r.VersionsFrom.JSONPath.Source, err = dep.VersionsFrom.JSONPath.Source(vals)
+			r.VersionsFrom.JSONPath.Source, err = dep.VersionsFrom.JSONPath.Source(initialValues)
 			if err != nil {
 				return nil, err
 			}
@@ -159,11 +161,11 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 					}
 
 					prev := verLock.Dependencies[alias].Version
-					vals[alias] = Values{"version": rel.Version, "previousVersion": prev}
 
 					verLock.Dependencies[alias] = confapi.DepVersionLock{
 						Version:         rel.Version,
 						PreviousVersion: prev,
+						Meta:            rel.Meta,
 					}
 				} else {
 					m.Logger.V(2).Info("no tracker found", "alias", alias)
@@ -180,9 +182,11 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 				if err != nil {
 					return nil, fmt.Errorf("updating locked dependency %q: %w", alias, err)
 				}
-				vals[alias] = Values{"version": rel.Version}
 
-				verLock.Dependencies[alias] = confapi.DepVersionLock{Version: rel.Version}
+				verLock.Dependencies[alias] = confapi.DepVersionLock{
+					Version: rel.Version,
+					Meta:    rel.Meta,
+				}
 			} else {
 				m.Logger.V(2).Info("no tracker found", "alias", alias)
 			}
@@ -190,7 +194,7 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 	}
 
 	// Regenerate template parameters from the up-to-date versions of dependencies
-	vals = mergeByOverwrite(Values{}, mod.Defaults, params.Arguments, verLock.ToDepsMap(), verLock.ToMap())
+	latestValues := mergeByOverwrite(Values{}, mod.Defaults, params.Arguments, verLock.ToMap())
 
 	// Load sub-modules
 	for alias, dep := range mod.Dependencies {
@@ -204,9 +208,9 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 			dep.LockedVersions.Dependencies = map[string]confapi.DepVersionLock{}
 		}
 
-		args, err := dep.Arguments(vals)
+		args, err := dep.Arguments(latestValues)
 		if err != nil {
-			m.Logger.V(2).Info("renderargs failed with values", "vals", vals)
+			m.Logger.V(2).Info("renderargs failed with values", "latestValues", latestValues)
 			return nil, err
 		}
 		m.Logger.V(2).Info("loading dependency", "alias", alias, "dep", dep)
@@ -223,10 +227,10 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 		}
 		submods[alias] = submod
 
-		vals = mergeByOverwrite(Values{}, vals, map[string]interface{}{alias: submod.Values})
-		//vals[alias] = submod.Values
+		latestValues = mergeByOverwrite(Values{}, latestValues, map[string]interface{}{alias: submod.Values})
+		//latestValues[alias] = submod.Values
 
-		m.Logger.V(1).Info("loaded dependency", "alias", alias, "vals", vals)
+		m.Logger.V(1).Info("loaded dependency", "alias", alias, "latestValues", latestValues)
 	}
 
 	execs := map[string]execversionmanager.Executable{}
@@ -235,7 +239,7 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 		for _, p := range v.Platforms {
 			var src string
 			if p.Source != nil {
-				s, err := p.Source(vals)
+				s, err := p.Source(latestValues)
 				if err != nil {
 					return nil, err
 				}
@@ -244,7 +248,7 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 
 			var docker yaml.OptionSpec
 			if p.Docker != nil {
-				d, err := p.Docker(vals)
+				d, err := p.Docker(latestValues)
 				if err != nil {
 					return nil, err
 				}
@@ -266,7 +270,7 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 		&execversionmanager.Config{
 			Executables: execs,
 		},
-		execversionmanager.Values(vals),
+		execversionmanager.Values(latestValues),
 		execversionmanager.WD(m.AbsWorkDir),
 		execversionmanager.GoGetterWD(m.GoGetterAbsWorkDir),
 		execversionmanager.FS(m.FS),
@@ -277,7 +281,7 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 
 	return &Module{
 		Alias:           mod.Name,
-		Values:          vals,
+		Values:          latestValues,
 		ValuesSchema:    mod.ValuesSchema,
 		Files:           mod.Files,
 		Directories:     mod.Directories,
