@@ -184,3 +184,7 @@ The following template functions are available for use within template provision
 - `{{ hasKey .Foo.Bar "mykey" }}` returns `true` if `.Foo.Bar` is a `map[string]interface{}` and the value for the key `mykey` is set.
 - `{{ trimSpace .Str }}` removes spaces, tabs, and new-lines from `.Str`
 ``
+
+# Similar Projects
+
+- https://github.com/dailymotion/octopilot
