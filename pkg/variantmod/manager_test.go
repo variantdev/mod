@@ -42,7 +42,9 @@ func TestModule(t *testing.T) {
 		},
 		Files: []confapi.File{
 			{
-				Path: "test.yaml",
+				Path: func(_ map[string]interface{}) (string, error) {
+					return "test.yaml", nil
+				},
 				Source: func(_ map[string]interface{}) (string, error) {
 					return "git::https://github.com/cloudposse/helmfiles.git@releases/kiam.yaml?ref=0.40.0", nil
 				},
@@ -65,7 +67,7 @@ func TestModule(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := man.doBuild(mod); err != nil {
+	if _, err := man.doBuild(mod, &BuildOpts{}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -484,6 +486,8 @@ dependencies:
 	lockExpected := `dependencies:
   coreos:
     version: 2079.5.0
+    versions:
+    - 2079.5.0
 `
 	if string(lockActual) != lockExpected {
 		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
@@ -606,6 +610,8 @@ nodeGroups:
   k8s:
     version: 1.13.7
     previousVersion: 1.10.13
+    versions:
+    - 1.13.7
 `
 	if string(lockActual) != lockExpected {
 		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
@@ -750,6 +756,8 @@ nodeGroups:
   k8s:
     version: 1.13.7
     previousVersion: 1.10.13
+    versions:
+    - 1.13.7
 `
 	if string(lockActual) != lockExpected {
 		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
@@ -870,6 +878,8 @@ RUN echo hello
   helmfile:
     version: 0.95.0
     previousVersion: 0.94.1
+    versions:
+    - 0.95.0
 `
 	if string(lockActual) != lockExpected {
 		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))

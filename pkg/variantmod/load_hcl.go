@@ -130,7 +130,7 @@ func HCLModuleAsConfModule(mod hclconf.Module) (*confapi.Module, error) {
 				return m, nil
 			},
 			Alias:          d.Name,
-			LockedVersions: confapi.ModVersionLock{},
+			LockedVersions: confapi.State{},
 			ForceUpdate:    false,
 		}
 	}
@@ -192,7 +192,9 @@ func HCLModuleAsConfModule(mod hclconf.Module) (*confapi.Module, error) {
 	for i := range mod.Files {
 		f := mod.Files[i]
 		var ff confapi.File
-		ff.Path = f.Name
+		ff.Path = func(v map[string]interface{}) (string, error) {
+			return f.Name, nil
+		}
 		ff.Source = func(v map[string]interface{}) (string, error) {
 			return f.Source, nil
 		}
@@ -348,6 +350,15 @@ func HCLModuleAsConfModule(mod hclconf.Module) (*confapi.Module, error) {
 		execs[n] = ee
 	}
 
+	var stages []confapi.Stage
+
+	for _, s := range mod.Stages {
+		stages = append(stages, confapi.Stage{
+			Name:         s.Name,
+			Environments: s.Environments,
+		})
+	}
+
 	return &confapi.Module{
 		Name:           mod.Name,
 		Defaults:       map[string]interface{}{},
@@ -360,10 +371,11 @@ func HCLModuleAsConfModule(mod hclconf.Module) (*confapi.Module, error) {
 		RegexpReplaces: regexpReplaces,
 		TextReplaces:   []confapi.TextReplace{},
 		Yamls:          []confapi.YamlPatch{},
+		Stages:         stages,
 	}, nil
 }
 
-func appToManager(hclApp *hclconf.App, opts ...Option) (Interface, error) {
+func appToManager(hclApp *hclconf.App, opts ...Option) (*ModuleManager, error) {
 	numModules := len(hclApp.Config.Modules)
 	if numModules == 0 {
 		return nil, fmt.Errorf("one or more modules must be present")
@@ -383,7 +395,7 @@ func appToManager(hclApp *hclconf.App, opts ...Option) (Interface, error) {
 		return nil, err
 	}
 
-	man.load = func(lock confapi.ModVersionLock) (*Module, error) {
+	man.load = func(lock confapi.State) (*Module, error) {
 		mod := &Module{
 			Alias: modConf.Name,
 		}

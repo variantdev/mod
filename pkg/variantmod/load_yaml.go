@@ -150,6 +150,14 @@ func (m *ModuleLoader) loadYamlModule(params confapi.ModuleParams) (*confapi.Mod
 		return nil, err
 	}
 
+	stages := []confapi.Stage{}
+	for _, s := range spec.Stages {
+		stages = append(stages, confapi.Stage{
+			Name:         s.Name,
+			Environments: s.Environments,
+		})
+	}
+
 	return &confapi.Module{
 		Name:           spec.Name,
 		Defaults:       defaults,
@@ -162,5 +170,6 @@ func (m *ModuleLoader) loadYamlModule(params confapi.ModuleParams) (*confapi.Mod
 		RegexpReplaces: regexpReplaces,
 		TextReplaces:   textReplaces,
 		Yamls:          yamls,
+		Stages:         stages,
 	}, nil
 }

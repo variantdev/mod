@@ -16,6 +16,7 @@ type ModuleSpec struct {
 	Provisioners ProvisionersSpec          `yaml:"provisioners"`
 	Dependencies map[string]DependencySpec `yaml:"dependencies"`
 	Releases     map[string]ReleaseSpec    `yaml:"releases"`
+	Stages       []Stage                   `yaml:"stages,omitempty"`
 }
 
 type ReleaseSpec struct {
@@ -103,6 +104,7 @@ type ProvisionersSpec struct {
 
 type FileSpec struct {
 	Source    string                 `yaml:"source"`
+	Path      string                 `yaml:"path"`
 	Arguments map[string]interface{} `yaml:"arguments"`
 }
 
@@ -114,6 +116,11 @@ type DirectorySpec struct {
 
 type TemplateSpec struct {
 	Arguments map[string]interface{} `yaml:"arguments"`
+}
+
+type Stage struct {
+	Name         string   `yaml:"name"`
+	Environments []string `yaml:"environments"`
 }
 
 func NewRenderArgs(args map[string]interface{}) func(map[string]interface{}) (map[string]interface{}, error) {
@@ -133,8 +140,12 @@ func NewRender(name, str string) func(map[string]interface{}) (string, error) {
 }
 
 func ToFile(path string, spec FileSpec) confapi.File {
+	if spec.Path != "" {
+		path = spec.Path
+	}
+
 	return confapi.File{
-		Path:   path,
+		Path:   NewRender("file.path", path),
 		Source: NewRender("file.sourc", spec.Source),
 		Args:   NewRenderArgs(spec.Arguments),
 	}
@@ -226,7 +237,7 @@ type DependencySpec struct {
 	Arguments         map[string]interface{} `yaml:"arguments"`
 
 	Alias          string
-	LockedVersions confapi.ModVersionLock
+	LockedVersions confapi.State
 
 	ForceUpdate bool
 }

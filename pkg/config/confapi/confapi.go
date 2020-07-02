@@ -16,10 +16,11 @@ type Module struct {
 	TextReplaces   []TextReplace
 	RegexpReplaces []RegexpReplace
 	Yamls          []YamlPatch
+	Stages         []Stage
 }
 
 type File struct {
-	Path   string
+	Path   func(map[string]interface{}) (string, error)
 	Source func(map[string]interface{}) (string, error)
 	Args   func(map[string]interface{}) (map[string]interface{}, error)
 }
@@ -39,7 +40,7 @@ type ModuleParams struct {
 	Source         string
 	Arguments      map[string]interface{}
 	Alias          string
-	LockedVersions ModVersionLock
+	LockedVersions State
 	ForceUpdate    bool
 	Module         *Module
 }
@@ -76,23 +77,16 @@ type Dependency struct {
 	Arguments func(map[string]interface{}) (map[string]interface{}, error)
 
 	Alias          string
-	LockedVersions ModVersionLock
+	LockedVersions State
 
 	ForceUpdate bool
 }
 
-type ModVersionLock struct {
-	Dependencies map[string]DepVersionLock `yaml:"dependencies"`
-	RawLock      string                    `yaml:"-"`
+type Meta struct {
+	Dependencies map[string]map[string]map[string]interface{} `yaml:"dependencies,omitempty"`
 }
 
-type DepVersionLock struct {
-	Version         string                 `yaml:"version"`
-	PreviousVersion string                 `yaml:"previousVersion,omitempty"`
-	Meta            map[string]interface{} `yaml:",inline"`
-}
-
-func (l ModVersionLock) ToMap() map[string]interface{} {
+func (l State) ToMap() map[string]interface{} {
 	deps := l.ToDepsMap()
 	m := map[string]interface{}{"Dependencies": deps, "RawLock": l.RawLock}
 
@@ -103,7 +97,7 @@ func (l ModVersionLock) ToMap() map[string]interface{} {
 	return m
 }
 
-func (l ModVersionLock) ToDepsMap() map[string]interface{} {
+func (l State) ToDepsMap() map[string]interface{} {
 	deps := map[string]interface{}{}
 	for k, v := range l.Dependencies {
 		m := map[string]interface{}{"version": v.Version}
@@ -181,4 +175,9 @@ type GitHubReleases struct {
 
 type DockerImageTags struct {
 	Source func(map[string]interface{}) (string, error)
+}
+
+type Stage struct {
+	Name         string
+	Environments []string
 }

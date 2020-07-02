@@ -7,6 +7,7 @@ import (
 	"github.com/twpayne/go-vfs"
 	"github.com/variantdev/mod/pkg/cmdsite"
 	"github.com/variantdev/mod/pkg/config/confapi"
+	"github.com/variantdev/mod/pkg/deploycoordinator"
 	"github.com/variantdev/mod/pkg/depresolver"
 	"github.com/variantdev/mod/pkg/execversionmanager"
 	"github.com/variantdev/mod/pkg/releasetracker"
@@ -162,10 +163,11 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 
 					prev := verLock.Dependencies[alias].Version
 
-					verLock.Dependencies[alias] = confapi.DepVersionLock{
+					verLock.Dependencies[alias] = confapi.DependencyState{
 						Version:         rel.Version,
 						PreviousVersion: prev,
 						Meta:            rel.Meta,
+						Versions:        preUp.Versions,
 					}
 				} else {
 					m.Logger.V(2).Info("no tracker found", "alias", alias)
@@ -183,7 +185,7 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 					return nil, fmt.Errorf("updating locked dependency %q: %w", alias, err)
 				}
 
-				verLock.Dependencies[alias] = confapi.DepVersionLock{
+				verLock.Dependencies[alias] = confapi.DependencyState{
 					Version: rel.Version,
 					Meta:    rel.Meta,
 				}
@@ -205,7 +207,7 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 		dep.Alias = alias
 
 		if dep.LockedVersions.Dependencies == nil {
-			dep.LockedVersions.Dependencies = map[string]confapi.DepVersionLock{}
+			dep.LockedVersions.Dependencies = map[string]confapi.DependencyState{}
 		}
 
 		args, err := dep.Arguments(latestValues)
@@ -279,18 +281,45 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 		return nil, err
 	}
 
-	return &Module{
+	r := &Module{
 		Alias:           mod.Name,
 		Values:          latestValues,
 		ValuesSchema:    mod.ValuesSchema,
 		Files:           mod.Files,
 		Directories:     mod.Directories,
-		RegexpReplaces:  mod.RegexpReplaces,
 		TextReplaces:    mod.TextReplaces,
+		RegexpReplaces:  mod.RegexpReplaces,
 		Yamls:           mod.Yamls,
 		Executable:      execset,
 		Submodules:      submods,
 		ReleaseTrackers: trackers,
 		VersionLock:     verLock,
-	}, nil
+		Stages:          mod.Stages,
+	}
+
+	if err := r.Transact(func(t *deploycoordinator.Single) error {
+		var deps []string
+
+		for name := range mod.Dependencies {
+			deps = append(deps, name)
+		}
+
+		if err := t.UpdateDependencies(deps, func(depName string) ([]deploycoordinator.DependencyEntry, error) {
+			d := verLock.Dependencies[depName]
+			return []deploycoordinator.DependencyEntry{
+				{
+					Version: d.Version,
+					Meta:    d.Meta,
+				},
+			}, nil
+		}); err != nil {
+			return err
+		}
+
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+
+	return r, nil
 }

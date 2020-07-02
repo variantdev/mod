@@ -18,13 +18,15 @@ func New(log logr.Logger) *cobra.Command {
 	var newVariantMod func() (*variantmod.ModuleManager, error)
 
 	cmd := cobra.Command{
-		Use: "mod",
+		Use:        "mod",
+		Args:       cobra.MaximumNArgs(1),
+		Deprecated: "Running `mod` without a sub-command is deprecated. Use `mod build` instead.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mod, err := newVariantMod()
 			if err != nil {
 				return err
 			}
-			_, err = mod.Build()
+			_, err = mod.Build(args...)
 			return err
 		},
 	}
@@ -42,13 +44,14 @@ func New(log logr.Logger) *cobra.Command {
 	}
 
 	modbuild := &cobra.Command{
-		Use: "build",
+		Use:  "build [STAGE]",
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			mod, err := newVariantMod()
 			if err != nil {
 				return err
 			}
-			_, err = mod.Build()
+			_, err = mod.Build(args...)
 			return err
 		},
 	}
@@ -80,7 +83,7 @@ func New(log logr.Logger) *cobra.Command {
 		},
 	}
 
-	up := func(branch, title, body, base string, build, push, pr, skipDuplicatePRBody, skipDuplicatePRTitle bool) error {
+	up := func(branch, title, body, base string, build, push, pr, skipDuplicatePRBody, skipDuplicatePRTitle bool, args []string) error {
 		if pr {
 			push = true
 		}
@@ -91,7 +94,7 @@ func New(log logr.Logger) *cobra.Command {
 		if err := man.Checkout(base); err != nil {
 			return err
 		}
-		err = man.Up()
+		err = man.Up(args...)
 		if err != nil {
 			return err
 		}
@@ -106,7 +109,7 @@ func New(log logr.Logger) *cobra.Command {
 			branch = base
 		}
 		if build {
-			r, err := man.Build()
+			r, err := man.Build(args...)
 			if err != nil {
 				return err
 			}
@@ -134,9 +137,10 @@ func New(log logr.Logger) *cobra.Command {
 		var repo, branch, base, title, body string
 		var build, push, pr, skipDuplicatePRBody, skipDuplicatePRTitle bool
 		modup := &cobra.Command{
-			Use: "up",
+			Use:  "up [STAGE]",
+			Args: cobra.MaximumNArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
-				return up(branch, title, body, base, build, push, pr, skipDuplicatePRBody, skipDuplicatePRTitle)
+				return up(branch, title, body, base, build, push, pr, skipDuplicatePRBody, skipDuplicatePRTitle, args)
 			},
 		}
 		modup.Flags().BoolVar(&build, "build", false, "Run `build` after update")
@@ -170,7 +174,7 @@ func New(log logr.Logger) *cobra.Command {
 					return err
 				}
 
-				return up(branch, title, body, base, build, push, pr, skipDuplicatePRBody, skipDuplicatePRTitle)
+				return up(branch, title, body, base, build, push, pr, skipDuplicatePRBody, skipDuplicatePRTitle, nil)
 			},
 		}
 		modcreate.Flags().BoolVar(&build, "build", true, "Run `build` after update")

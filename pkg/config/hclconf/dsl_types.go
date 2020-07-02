@@ -11,11 +11,18 @@ type Config struct {
 type Module struct {
 	Name string `hcl:"name,label"`
 
+	Stages         []Stage         `hcl:"stage,block"`
 	Dependencies   []Dependency    `hcl:"dependency,block"`
 	Files          []File          `hcl:"file,block"`
 	Directories    []Directory     `hcl:"directory,block"`
 	RegexpReplaces []RegexpReplace `hcl:"regexp_replace,block"`
 	Executables    []Executable    `hcl:"executable,block"`
+}
+
+type Stage struct {
+	Name string `hcl:"name,label"`
+
+	Environments []string `hcl:"environments,attr"`
 }
 
 type Dependency struct {

@@ -170,6 +170,8 @@ RUN echo hello
   helmfile:
     version: 0.95.0
     previousVersion: 0.94.1
+    versions:
+    - 0.95.0
 `
 			if string(lockActual) != lockExpected {
 				t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
@@ -321,6 +323,8 @@ dependencies:
   helmfile:
     version: 0.95.0
     previousVersion: 0.94.1
+    versions:
+    - 0.95.0
 `
 			if string(lockActual) != lockExpected {
 				t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))

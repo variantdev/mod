@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/variantdev/mod/pkg/deploycoordinator"
 	"io"
 	"os"
 	"path/filepath"
@@ -30,7 +31,7 @@ type ModuleManager struct {
 	LockFile   string
 	Module     *confapi.Module
 
-	load func(lock confapi.ModVersionLock) (*Module, error)
+	load func(lock confapi.State) (*Module, error)
 
 	fs   vfs.FS
 	cmdr cmdsite.RunCommand
@@ -61,7 +62,7 @@ func New(opts ...Option) (*ModuleManager, error) {
 		return nil, err
 	}
 
-	man.load = func(lock confapi.ModVersionLock) (*Module, error) {
+	man.load = func(lock confapi.State) (*Module, error) {
 		spec := man.newModuleParams(confapi.ModuleParams{
 			Source:         filepath.Join(man.AbsWorkDir, man.ModuleFile),
 			Arguments:      map[string]interface{}{},
@@ -158,7 +159,7 @@ func initModuleManager(mod *ModuleManager, opts ...Option) (*ModuleManager, erro
 	return mod, nil
 }
 
-func (m *ModuleManager) loadLockFile(path string) (*confapi.ModVersionLock, error) {
+func (m *ModuleManager) loadLockFile(path string) (*confapi.State, error) {
 	bytes, err := m.fs.ReadFile(filepath.Join(m.AbsWorkDir, path))
 	if err != nil {
 		m.Logger.V(2).Info("load.readfile", "err", err.Error())
@@ -167,7 +168,7 @@ func (m *ModuleManager) loadLockFile(path string) (*confapi.ModVersionLock, erro
 		}
 	}
 
-	lockContents := confapi.ModVersionLock{Dependencies: map[string]confapi.DepVersionLock{}, RawLock: string(bytes)}
+	lockContents := confapi.State{Dependencies: map[string]confapi.DependencyState{}, RawLock: string(bytes)}
 	if bytes != nil {
 		m.Logger.V(2).Info("load.yaml.unmarshal.begin", "bytes", string(bytes))
 		if err := yaml.Unmarshal(bytes, &lockContents); err != nil {
@@ -182,8 +183,8 @@ func (m *ModuleManager) loadLockFile(path string) (*confapi.ModVersionLock, erro
 }
 
 func (m *ModuleManager) Enabled() bool {
-	_, err := m.load(confapi.ModVersionLock{
-		Dependencies: map[string]confapi.DepVersionLock{},
+	_, err := m.load(confapi.State{
+		Dependencies: map[string]confapi.DependencyState{},
 		RawLock:      "",
 	})
 	return err == nil
@@ -252,17 +253,35 @@ func (m *ModuleManager) GetShellIfEnabled() (*cmdsite.CommandSite, error) {
 	return nil, nil
 }
 
-func (m *ModuleManager) Build() (*BuildResult, error) {
+type BuildOpts struct {
+	Stage string
+}
+
+type UpOpts struct {
+	Stage string
+}
+
+func (m *ModuleManager) Build(opts ...string) (*BuildResult, error) {
+	var stage string
+	if len(opts) > 0 {
+		stage = opts[0]
+	}
+
 	mod, err := m.loadLockAndModule()
 	if err != nil {
 		return nil, err
 	}
 
-	return m.doBuild(mod)
+	return m.doBuild(mod, &BuildOpts{Stage: stage})
 }
 
-func (m *ModuleManager) Up() error {
-	mod, err := m.doUp()
+func (m *ModuleManager) Up(opts ...string) error {
+	var stage string
+	if len(opts) > 0 {
+		stage = opts[0]
+	}
+
+	mod, err := m.doUp(&UpOpts{Stage: stage})
 	if err != nil {
 		return err
 	}
@@ -431,24 +450,68 @@ func (m *ModuleManager) Create(templateRepo, newRepo string, public bool) error 
 	return nil
 }
 
-func (m *ModuleManager) doUp() (*Module, error) {
+func (m *ModuleManager) doUp(opts *UpOpts) (*Module, error) {
 	lockContents, err := m.loadLockFile(m.LockFile)
 	if err != nil {
 		return nil, err
 	}
 
 	m.Logger.V(2).Info("running up")
+
+	stage := opts.Stage
+
 	spec := m.newModuleParams(confapi.ModuleParams{
 		Source:    filepath.Join(m.AbsWorkDir, m.ModuleFile),
 		Arguments: map[string]interface{}{},
-		//LockedVersions: ModVersionLock{Dependencies: map[string]DepVersionLock{}},
+		//LockedVersions: State{Dependencies: map[string]DependencyState{}},
 		LockedVersions: *lockContents,
-		ForceUpdate:    true,
+		ForceUpdate:    stage == "",
 	})
 
 	mod, err := m.loader.LoadModule(spec)
 	if err != nil {
 		return nil, err
+	}
+
+	if stage != "" {
+		d := map[string]string{}
+		for k, _ := range mod.VersionLock.Dependencies {
+			d[k] = ""
+		}
+
+		var isFirstStageThatRequiresUpdatedRevisions bool
+
+		if err := mod.Transact(func(dc *deploycoordinator.Single) error {
+			isFirstStageThatRequiresUpdatedRevisions = dc.RequiresRevisionUpdate(stage)
+
+			return nil
+		}); err != nil {
+			return nil, err
+		}
+
+		if isFirstStageThatRequiresUpdatedRevisions {
+			spec.ForceUpdate = true
+			mod, err = m.loader.LoadModule(spec)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		if err := mod.Transact(func(dc *deploycoordinator.Single) error {
+			if isFirstStageThatRequiresUpdatedRevisions {
+				if err := dc.UpdateRevisions("*", d); err != nil {
+					return err
+				}
+			}
+
+			if err := dc.UpdateStage(stage); err != nil {
+				return err
+			}
+
+			return nil
+		}); err != nil {
+			return nil, err
+		}
 	}
 
 	m.Logger.V(2).Info(fmt.Sprintf("up: %+v\n", mod))
@@ -544,9 +607,49 @@ func mergeByOverwrite(src ...Values) (res Values) {
 	return res
 }
 
-func (m *ModuleManager) doBuild(mod *Module) (*BuildResult, error) {
+func (m *ModuleManager) doBuild(mod *Module, opts *BuildOpts) (*BuildResult, error) {
 	r := BuildResult{}
 	err := mod.Walk(func(dep *Module) error {
+		var stages []string
+
+		if opts.Stage != "" {
+			stages = append(stages, opts.Stage)
+		} else if len(mod.Stages) > 0 {
+			for _, s := range mod.Stages {
+				stages = append(stages, s.Name)
+			}
+		}
+
+		if len(stages) > 0 {
+			for _, stageName := range stages {
+				transactErr := dep.Transact(func(t *deploycoordinator.Single) error {
+					stage, err := t.GetStage(stageName)
+					if err != nil {
+						return err
+					}
+
+					deploys := stage.GetDeployments()
+					for _, deploy := range deploys {
+						for k, v := range deploy.Values {
+							dep.Values[k] = v
+						}
+
+						rr, err := m.buildModule(dep)
+						if err != nil {
+							return fmt.Errorf("building environment %q in stage %q: %w", deploy.Environment, stage.Name, err)
+						}
+
+						r.Files = append(r.Files, rr.Files...)
+					}
+
+					return nil
+				})
+				if transactErr != nil {
+					return fmt.Errorf("building stage %q: %w", stageName, transactErr)
+				}
+			}
+		}
+
 		rr, err := m.buildModule(dep)
 		if err != nil {
 			return err
@@ -737,7 +840,12 @@ func (m *ModuleManager) buildModule(mod *Module) (r *BuildResult, err error) {
 			contents = []byte(res)
 		}
 
-		dstFile := filepath.Join(m.AbsWorkDir, f.Path)
+		path, err := f.Path(values)
+		if err != nil {
+			return nil, fmt.Errorf("rendering file.path: %ww", err)
+		}
+
+		dstFile := filepath.Join(m.AbsWorkDir, path)
 
 		dstDir := filepath.Dir(dstFile)
 
@@ -750,7 +858,7 @@ func (m *ModuleManager) buildModule(mod *Module) (r *BuildResult, err error) {
 			return nil, err
 		}
 
-		r.Files = append(r.Files, f.Path)
+		r.Files = append(r.Files, path)
 	}
 
 	for _, t := range mod.TextReplaces {

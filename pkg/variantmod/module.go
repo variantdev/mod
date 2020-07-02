@@ -2,6 +2,7 @@ package variantmod
 
 import (
 	"fmt"
+	"github.com/variantdev/mod/pkg/deploycoordinator"
 	"io"
 
 	"github.com/variantdev/mod/pkg/cmdsite"
@@ -22,6 +23,7 @@ type Module struct {
 	TextReplaces   []confapi.TextReplace
 	RegexpReplaces []confapi.RegexpReplace
 	Yamls          []confapi.YamlPatch
+	Stages         []confapi.Stage
 
 	ReleaseChannel *releasetracker.Tracker
 	Executable     *execversionmanager.ExecVM
@@ -29,7 +31,7 @@ type Module struct {
 	Submodules      map[string]*Module
 	ReleaseTrackers map[string]*releasetracker.Tracker
 
-	VersionLock confapi.ModVersionLock
+	VersionLock confapi.State
 }
 
 func merge(src, dst map[string]struct{}) {
@@ -99,6 +101,37 @@ func (m *Module) ListVersions(depName string, out io.Writer) error {
 	for _, r := range releases {
 		fmt.Fprintf(out, "%s\t%s\n", r.Version, r.Description)
 	}
+
+	return nil
+}
+
+func (m *Module) Transact(f func(t *deploycoordinator.Single) error) error {
+	dc := &deploycoordinator.Single{
+		Spec: &deploycoordinator.StageSpec{
+			Stages: m.Stages,
+		},
+		State: struct {
+			Stages []confapi.StageState
+		}{
+			Stages: m.VersionLock.Stages,
+		},
+		RevisionManager: &deploycoordinator.RevisionManager{
+			Revisions: m.VersionLock.Revisions,
+		},
+		DependencyManager: &deploycoordinator.DependencyManager{
+			State:     m.VersionLock.Dependencies,
+			StateMeta: m.VersionLock.Meta.Dependencies,
+		},
+	}
+
+	if err := f(dc); err != nil {
+		return err
+	}
+
+	m.VersionLock.Stages = dc.State.Stages
+	m.VersionLock.Revisions = dc.RevisionManager.Revisions
+	m.VersionLock.Dependencies = dc.DependencyManager.State
+	m.VersionLock.Meta.Dependencies = dc.DependencyManager.StateMeta
 
 	return nil
 }
