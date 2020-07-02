@@ -174,7 +174,7 @@ After your QA team finished testing it in `qa` and your peformance team finished
 $ mod up production --build --pull-request
 ```
 
-As you might have guessed, this updates `states/helmfile.qa.yaml`, and merging the pull request updating it should trigger a production deployment.
+As you might have guessed, this updates `states/helmfile.prod.yaml`, and merging the pull request updating it should trigger a production deployment.
 
 ## Examples
 
