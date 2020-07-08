@@ -168,7 +168,14 @@ func (m *ModuleManager) loadLockFile(path string) (*confapi.State, error) {
 		}
 	}
 
-	lockContents := confapi.State{Dependencies: map[string]confapi.DependencyState{}, RawLock: string(bytes)}
+	lockContents := confapi.State{
+		Dependencies: map[string]confapi.DependencyState{},
+		Meta: confapi.StateMeta{
+			Dependencies: map[string]confapi.VersionedDependencyStateMeta{},
+		},
+		RawLock: string(bytes),
+	}
+
 	if bytes != nil {
 		m.Logger.V(2).Info("load.yaml.unmarshal.begin", "bytes", string(bytes))
 		if err := yaml.Unmarshal(bytes, &lockContents); err != nil {

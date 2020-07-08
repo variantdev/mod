@@ -497,8 +497,12 @@ func (p *Tracker) extractObjects(tmp interface{}, objPath, verPath, metaKey stri
 
 	var rs []*Release
 
+	var ary []interface{}
+
 	switch typed := got.(type) {
 	case []interface{}:
+		ary = typed
+
 		for _, obj := range typed {
 			raw, err := jsonpath.Get(verPath, obj)
 			if err != nil {
@@ -512,7 +516,8 @@ func (p *Tracker) extractObjects(tmp interface{}, objPath, verPath, metaKey stri
 
 			v, err := p.parseVersion(s)
 			if err != nil {
-				return nil, err
+				p.Logger.Info("Ignoring error: parsing semver", "error", err.Error(), "value", s, "jsonPath", verPath)
+				continue
 			}
 
 			meta := map[string]interface{}{
@@ -520,11 +525,17 @@ func (p *Tracker) extractObjects(tmp interface{}, objPath, verPath, metaKey stri
 			}
 
 			rs = append(rs, &Release{
-				Semver: v,
+				Semver:  v,
 				Version: strings.TrimPrefix(s, "v"),
-				Meta: meta,
+				Meta:    meta,
 			})
 		}
+	default:
+		return nil, fmt.Errorf("extracting json array at path %q: invalid type of value, %T, found", objPath, typed)
+	}
+
+	if len(rs) == 0 {
+		return nil, fmt.Errorf("no valid versions extracted out of %d items at path %q under array at %q", len(ary), verPath, objPath)
 	}
 
 	sort.Slice(rs, func(i, j int) bool {
