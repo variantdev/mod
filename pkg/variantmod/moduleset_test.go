@@ -179,7 +179,7 @@ RUN echo hello
 
 			_, err = man.Build()
 
-			dockerfile2Expected := `FROM helmfile:0.95.0
+			dockerfile2Expected := `FROM helmfile:0.142.0
 
 RUN echo hello
 `
