@@ -2,11 +2,12 @@ package execversionmanager
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
+
 	"github.com/k-kinzal/aliases/pkg/aliases/script"
 	"github.com/variantdev/mod/pkg/tmpl"
 	"gopkg.in/yaml.v3"
-	"path/filepath"
-	"strings"
 
 	"github.com/k-kinzal/aliases/pkg/aliases/context"
 	aliasesyaml "github.com/k-kinzal/aliases/pkg/aliases/yaml"
@@ -32,7 +33,7 @@ func (m *ExecVM) getDockerAlias(name string, platform Platform) (string, error) 
 		return "", err
 	}
 
-	dockerRunConf.EnvPrefix = append(dockerRunConf.EnvPrefix, strings.ToUpper(name) + "_")
+	dockerRunConf.EnvPrefix = append(dockerRunConf.EnvPrefix, strings.ToUpper(name)+"_")
 
 	aliasesConfMap := map[string]interface{}{
 		name: dockerRunConf,
@@ -54,7 +55,7 @@ func (m *ExecVM) getDockerAlias(name string, platform Platform) (string, error) 
 
 	client, err := docker.NewClient()
 	if err != nil {
-		return "", fmt.Errorf("docker: %v", err)
+		return "", fmt.Errorf("docker: new client: %v", err)
 	}
 
 	conf, err := aliasesyaml.Unmarshal(aliasesConfBytes)
@@ -68,7 +69,7 @@ func (m *ExecVM) getDockerAlias(name string, platform Platform) (string, error) 
 		}
 	}
 
-	m.Logger.V(2).Info("docker: %s", name, "exportDir", exportDir, "data", string(aliasesConfBytes))
+	m.Logger.V(2).Info("docker: "+name, "exportDir", exportDir, "data", string(aliasesConfBytes))
 
 	return filepath.Join(exportDir, name), nil
 }

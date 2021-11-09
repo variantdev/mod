@@ -1,11 +1,12 @@
 package releasetracker
 
 import (
+	"testing"
+
 	"github.com/Masterminds/semver"
 	"github.com/variantdev/mod/pkg/cmdsite"
 	"github.com/variantdev/mod/pkg/vhttpget"
 	"gopkg.in/yaml.v3"
-	"testing"
 )
 
 func TestGetLatest(t *testing.T) {
@@ -22,36 +23,6 @@ func TestGetLatest(t *testing.T) {
 
 	if !lat.Semver.Equal(v2) {
 		t.Errorf("unexpected release considered latest: expected=v2, got=%v", lat.Semver)
-	}
-}
-
-func TestProvider_JSONPath(t *testing.T) {
-	input := `releaseChannel:
-  versionsFrom:
-    jsonPath:
-      source: https://coreos.com/releases/releases-stable.json
-      versions: "$"
-      type: semver
-      description: "$['{{.version}}'].release_notes"
-`
-
-	conf := &Config{}
-	if err := yaml.Unmarshal([]byte(input), conf); err != nil {
-		t.Fatal(err)
-	}
-
-	stable, err := New(conf.ReleaseChannel)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	latest, err := stable.Latest("= 2079.5.1")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if latest.Version != "2079.5.1" {
-		t.Errorf("unexpected version: expected=%v, got=%v", "2079.5.1", latest.Version)
 	}
 }
 
@@ -178,8 +149,8 @@ func TestProvider_GitHubTags(t *testing.T) {
   }
 ]
 `
-	gets := map[vhttpget.TestGetInput]string{
-		vhttpget.TestGetInput{URL: "https://api.github.com/repos/mumoshu/variant/tags"}: expectedOut,
+	gets := map[string]string{
+		"https://api.github.com/repos/mumoshu/variant/tags": expectedOut,
 	}
 	httpGetter := vhttpget.NewTester(gets)
 	stable, err := New(conf.ReleaseChannel, HttpGetter(httpGetter))
@@ -425,8 +396,8 @@ func TestProvider_GitHubReleases(t *testing.T) {
 ]
 `
 
-	gets := map[vhttpget.TestGetInput]string{
-		vhttpget.TestGetInput{URL: "https://api.github.com/repos/mumoshu/variant/releases"}: expectedOut,
+	gets := map[string]string{
+		"https://api.github.com/repos/mumoshu/variant/releases": expectedOut,
 	}
 	httpGetter := vhttpget.NewTester(gets)
 	stable, err := New(conf.ReleaseChannel, HttpGetter(httpGetter))
@@ -458,8 +429,8 @@ func TestProvider_DockerRegistryImageTags(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gets := map[vhttpget.TestGetInput]string{
-		vhttpget.TestGetInput{URL: "https://registry.hub.docker.com/v2/repositories/mumoshu/helmfile-chatops/tags/?page_size=1000"}: `{"count": 2, "next": null, "previous": null, "results": [{"name": "0.2.0", "full_size": 89867735, "images": [{"size": 89867735, "architecture": "amd64", "variant": null, "features": null, "os": "linux", "os_version": null, "os_features": null}], "id": 60688451, "repository": 7345782, "creator": 17205, "last_updater": 17205, "last_updated": "2019-07-02T07:02:05.424914Z", "image_id": null, "v2": true}, {"name": "0.1.0", "full_size": 89738457, "images": [{"size": 89738457, "architecture": "amd64", "variant": null, "features": null, "os": "linux", "os_version": null, "os_features": null}], "id": 60687743, "repository": 7345782, "creator": 17205, "last_updater": 17205, "last_updated": "2019-07-02T06:51:44.860914Z", "image_id": null, "v2": true}]}`,
+	gets := map[string]string{
+		"https://registry.hub.docker.com/v2/repositories/mumoshu/helmfile-chatops/tags/?page_size=1000": `{"count": 2, "next": null, "previous": null, "results": [{"name": "0.2.0", "full_size": 89867735, "images": [{"size": 89867735, "architecture": "amd64", "variant": null, "features": null, "os": "linux", "os_version": null, "os_features": null}], "id": 60688451, "repository": 7345782, "creator": 17205, "last_updater": 17205, "last_updated": "2019-07-02T07:02:05.424914Z", "image_id": null, "v2": true}, {"name": "0.1.0", "full_size": 89738457, "images": [{"size": 89738457, "architecture": "amd64", "variant": null, "features": null, "os": "linux", "os_version": null, "os_features": null}], "id": 60687743, "repository": 7345782, "creator": 17205, "last_updater": 17205, "last_updated": "2019-07-02T06:51:44.860914Z", "image_id": null, "v2": true}]}`,
 	}
 	httpGetter := vhttpget.NewTester(gets)
 	stable, err := New(conf.ReleaseChannel, HttpGetter(httpGetter))

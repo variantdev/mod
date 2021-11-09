@@ -4,13 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/twpayne/go-vfs/vfst"
 	"github.com/variantdev/mod/pkg/cmdsite"
 	"github.com/variantdev/mod/pkg/config/confapi"
-	"github.com/variantdev/mod/pkg/execversionmanager"
 	"github.com/variantdev/mod/pkg/loginfra"
 	"k8s.io/klog"
 	"k8s.io/klog/klogr"
@@ -119,381 +117,6 @@ provisioners:
 		t.Errorf("assertion failed: expected=%s, got=%s", "FOO2_FOO_BAR", string(actual))
 	}
 }
-
-func TestModuleFile_Dependencies(t *testing.T) {
-	if testing.Verbose() {
-	}
-
-	files := map[string]interface{}{
-		"/path/to/variant.mod": `
-name: myapp
-
-parameters:
-  schema:
-    properties:
-      foo:
-        type: string
-    required:
-    - foo
-  defaults:
-    foo: FOO
-
-provisioners:
-  files:
-    dst.yaml:
-      source: src.yaml.tpl
-      arguments:
-        foo: FOO2
-        arg1: "{{.foo}}_BAR_{{.coreos.coreos.version}}"
-    myapp.txt:
-      source: myapp.txt.tpl
-      arguments:
-        go: "{{.go.version}}"
-        coreos: "{{.coreos.coreos.version}}"
-
-dependencies:
-  coreos:
-    kind: Module
-    source: ./modules/coreos
-  go:
-    kind: Module
-    source: ./modules/go
-`,
-		"/path/to/src.yaml.tpl":   `{{.foo}}_{{.arg1}}`,
-		"/path/to/coreos.txt.tpl": `{{.ver}}`,
-		"/path/to/myapp.txt.tpl":  `{{.go}}_{{.coreos}}`,
-		"/path/to/modules/coreos/variant.mod": `name: coreos
-
-provisioners:
-  files:
-    coreos.txt:
-      source: coreos.txt.tpl
-      arguments:
-        ver: "{{.coreos.version}}"
-
-releases:
-  coreos:
-    versionsFrom:
-      jsonPath:
-        source: https://coreos.com/releases/releases-stable.json
-        versions: "$"
-        type: semver
-        description: "$['{{.version}}'].release_notes"
-
-dependencies:
-  coreos:
-    version: 2135.5.0
-`,
-		"/path/to/modules/go/variant.mod": `name: go
-
-parameters:
-  defaults:
-    version: "1.12.6"
-
-provisioners:
-  executables:
-    go:
-      platforms:
-        # Adds $VARIANT_MOD_PATH/mod/cache/CACHE_KEY/go/bin/go to $PATH
-        # Or its shim at $VARIANT_MOD_PATH/MODULE_NAME/shims
-      - source: https://dl.google.com/go/go{{.version}}.darwin-amd64.tar.gz@go/bin/go
-        selector:
-          matchLabels:
-            os: darwin
-            arch: amd64
-      - source: https://dl.google.com/go/go{{.version}}.linux-amd64.tar.gz@go/bin/go
-        selector:
-          matchLabels:
-            os: linux
-            arch: amd64
-    dockergo:
-      platforms:
-        # Adds $VARIANT_MOD_PATH/mod/cache/CACHE_KEY/dockergo to $PATH
-        # Or its shim at $VARIANT_MOD_PATH/MODULE_NAME/shims
-      - docker:
-          command: go
-          image: golang
-          tag: '{{.version}}'
-          volume:
-          - $PWD:/work
-          workdir: /work
-`,
-	}
-	fs, clean, err := vfst.NewTestFS(files)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer clean()
-	log := klogr.New()
-	klog.SetOutput(os.Stderr)
-	klog.V(2).Info(fmt.Sprintf("temp dir: %v", fs.TempDir()))
-	man, err := New(Logger(log), FS(fs), WD("/path/to"), GoGetterWD(filepath.Join(fs.TempDir(), "path", "to")))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = man.Build()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dstActual, err := fs.ReadFile("/path/to/dst.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	dstExpected := "FOO2_FOO_BAR_2135.5.0"
-	if string(dstActual) != dstExpected {
-		t.Errorf("assertion failed: expected=%s, got=%s", dstExpected, string(dstActual))
-	}
-
-	coreosTxtActual, err := fs.ReadFile("/path/to/coreos.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(coreosTxtActual) != "2135.5.0" {
-		t.Errorf("assertion failed: expected=%s, got=%s", "2135.5.0", string(coreosTxtActual))
-	}
-
-	myappTxtActual, err := fs.ReadFile("/path/to/myapp.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(myappTxtActual) != "1.12.6_2135.5.0" {
-		t.Errorf("assertion failed: expected=%s, got=%s", "1.12.6_2135.5.0", string(myappTxtActual))
-	}
-
-	if _, err := fs.ReadFile("/path/to/variant.lock"); err == nil {
-		t.Fatal("expected error not occurred")
-	}
-
-	if err := fs.WriteFile("/path/to/variant.lock", []byte("dependencies: {}\n"), 0755); err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	lockActual, err := fs.ReadFile("/path/to/variant.lock")
-	if err != nil {
-		t.Fatal(err)
-	}
-	lockExpected := `dependencies: {}
-`
-	if string(lockActual) != lockExpected {
-		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
-	}
-
-	sh, err := man.Shell()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	{
-		stdout, _, err := sh.CaptureStrings("sh", []string{"-c", "go version"})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		actual := strings.TrimSpace(string(stdout))
-		os, arch := execversionmanager.OsArch()
-		if err != nil {
-			t.Fatal(err)
-		}
-		expected := fmt.Sprintf("go version go1.12.6 %s/%s", os, arch)
-
-		if actual != expected {
-			t.Errorf("unexpected go version output: expected=\"%s\", got=\"%s\"", expected, actual)
-		}
-	}
-
-	{
-		stdout, _, err := sh.CaptureStrings("sh", []string{"-c", "dockergo version"})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		actual := strings.TrimSpace(string(stdout))
-		expected := fmt.Sprintf("go version go1.12.6 %s/%s", "linux", "amd64")
-
-		if actual != expected {
-			t.Errorf("unexpected go version output: expected=\"%s\", got=\"%s\"", expected, actual)
-		}
-	}
-}
-
-func TestModuleFile_DependenciesLocking(t *testing.T) {
-	if testing.Verbose() {
-	}
-
-	files := map[string]interface{}{
-		"/path/to/variant.mod": `
-name: myapp
-
-parameters:
-  schema:
-    properties:
-      foo:
-        type: string
-    required:
-    - foo
-  defaults:
-    foo: FOO
-
-provisioners:
-  files:
-    dst.yaml:
-      source: src.yaml.tpl
-      arguments:
-        foo: FOO2
-        arg1: "{{.foo}}_BAR_{{.coreos.version}}"
-    myapp.txt:
-      source: myapp.txt.tpl
-      arguments:
-        go: "{{.go.version}}"
-        coreos: "{{.coreos.version}}"
-
-dependencies:
-  coreos:
-    kind: Module
-    source: ./modules/coreos
-  go:
-    kind: Module
-    source: ./modules/go
-`,
-		"/path/to/src.yaml.tpl":   `{{.foo}}_{{.arg1}}`,
-		"/path/to/coreos.txt.tpl": `{{.ver}}`,
-		"/path/to/myapp.txt.tpl":  `{{.go}}_{{.coreos}}`,
-		"/path/to/modules/coreos/variant.mod": `name: coreos
-
-provisioners:
-  files:
-    coreos.txt:
-      source: coreos.txt.tpl
-      arguments:
-        ver: "{{.coreos.version}}"
-
-releases:
-  coreos:
-    versionsFrom:
-      jsonPath:
-        source: https://coreos.com/releases/releases-stable.json
-        versions: "$"
-        type: semver
-        description: "$['{{.version}}'].release_notes"
-
-dependencies:
-  coreos:
-    version: ">= 2135.5.0, < 2135.5.1"
-`,
-		"/path/to/modules/go/variant.mod": `name: go
-
-parameters:
-  defaults:
-    version: "1.12.6"
-
-provisioners:
-  executables:
-    go:
-      platforms:
-        # Adds $VARIANT_MOD_PATH/mod/cache/CACHE_KEY/go/bin/go to $PATH
-        # Or its shim at $VARIANT_MOD_PATH/MODULE_NAME/shims
-      - source: https://dl.google.com/go/go{{.version}}.darwin-amd64.tar.gz@go/bin/go
-        selector:
-          matchLabels:
-            os: darwin
-            arch: amd64
-      - source: https://dl.google.com/go/go{{.version}}.linux-amd64.tar.gz@go/bin/go
-        selector:
-          matchLabels:
-            os: linux
-            arch: amd64
-`,
-		"/path/to/variant.lock": `
-dependencies:
-  coreos:
-    version: "2079.5.0"
-`,
-	}
-	fs, clean, err := vfst.NewTestFS(files)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer clean()
-	log := klogr.New()
-	klog.SetOutput(os.Stderr)
-	klog.V(2).Info(fmt.Sprintf("temp dir: %v", fs.TempDir()))
-	man, err := New(Logger(log), FS(fs), WD("/path/to"), GoGetterWD(filepath.Join(fs.TempDir(), "path", "to")))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = man.Build()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	dstActual, err := fs.ReadFile("/path/to/dst.yaml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(dstActual) != "FOO2_FOO_BAR_2079.5.0" {
-		t.Errorf("assertion failed: expected=%s, got=%s", "FOO2_FOO_BAR_2079.5.0", string(dstActual))
-	}
-
-	coreosTxtActual, err := fs.ReadFile("/path/to/coreos.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(coreosTxtActual) != "2135.5.0" {
-		t.Errorf("assertion failed: expected=%s, got=%s", "2135.5.0", string(coreosTxtActual))
-	}
-
-	myappTxtActual, err := fs.ReadFile("/path/to/myapp.txt")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(myappTxtActual) != "1.12.6_2079.5.0" {
-		t.Errorf("assertion failed: expected=%s, got=%s", "1.12.6_2079.5.0", string(myappTxtActual))
-	}
-
-	sh, err := man.Shell()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	stdout, _, err := sh.CaptureStrings("sh", []string{"-c", "go version"})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	actual := strings.TrimSpace(string(stdout))
-	os, arch := execversionmanager.OsArch()
-	if err != nil {
-		t.Fatal(err)
-	}
-	expected := fmt.Sprintf("go version go1.12.6 %s/%s", os, arch)
-
-	if actual != expected {
-		t.Errorf("unexpected go version output: expected=\"%s\", got=\"%s\"", expected, actual)
-	}
-
-	err = man.Up()
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	lockActual, err := fs.ReadFile("/path/to/variant.lock")
-	if err != nil {
-		t.Fatal(err)
-	}
-	lockExpected := `dependencies:
-  coreos:
-    version: 2079.5.0
-    versions:
-    - 2079.5.0
-`
-	if string(lockActual) != lockExpected {
-		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
-	}
-}
-
 func TestDependencyLockinge_EksK8s(t *testing.T) {
 	if testing.Verbose() {
 	}
@@ -814,16 +437,16 @@ dependencies:
         args:
         - run
         - main.go
-    version: "> 0.94.0"
+    version: "> 0.141.0"
 `,
-		"/path/to/Dockerfile": `FROM helmfile:0.94.0
+		"/path/to/Dockerfile": `FROM helmfile:0.141.0
 
 RUN echo hello
 `,
 		"/path/to/variant.lock": `
 dependencies:
   helmfile:
-    version: "0.94.1"
+    version: "0.141.0"
 `,
 	}
 	fs, clean, err := vfst.NewTestFS(files)
@@ -836,8 +459,8 @@ dependencies:
 	klog.V(2).Info(fmt.Sprintf("temp dir: %v", fs.TempDir()))
 
 	expectedInput := cmdsite.NewInput("go", []string{"run", "main.go"}, map[string]string{})
-	expectedStdout := `0.94.1
-0.95.0
+	expectedStdout := `0.141.0
+0.142.0
 `
 	cmdr := cmdsite.NewTester(map[cmdsite.CommandInput]cmdsite.CommandOutput{
 		expectedInput: {Stdout: expectedStdout},
@@ -853,7 +476,7 @@ dependencies:
 		t.Fatal(err)
 	}
 
-	dockerfile1Expected := `FROM helmfile:0.94.1
+	dockerfile1Expected := `FROM helmfile:0.141.0
 
 RUN echo hello
 `
@@ -876,10 +499,10 @@ RUN echo hello
 	}
 	lockExpected := `dependencies:
   helmfile:
-    version: 0.95.0
-    previousVersion: 0.94.1
+    version: 0.142.0
+    previousVersion: 0.141.0
     versions:
-    - 0.95.0
+    - 0.142.0
 `
 	if string(lockActual) != lockExpected {
 		t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
@@ -890,7 +513,7 @@ RUN echo hello
 		t.Fatal(err)
 	}
 
-	dockerfile2Expected := `FROM helmfile:0.95.0
+	dockerfile2Expected := `FROM helmfile:0.142.0
 
 RUN echo hello
 `

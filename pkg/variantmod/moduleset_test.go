@@ -26,7 +26,7 @@ module "myapp" {
   dependency "exec" "helmfile" {
     command = "go"
     args = ["run", "main.go"]
-    version = "> 0.94.0"
+    version = "> 0.141.0"
   }
 
   regexp_replace "build/Dockerfile" {
@@ -42,7 +42,7 @@ module "myapp" {
   dependency "exec" "helmfile" {
     command = "go"
     args = ["run", "main.go"]
-    version = "> 0.94.0"
+    version = "> 0.141.0"
   }
 
   file "build/Dockerfile" {
@@ -60,7 +60,7 @@ module "myapp" {
   dependency "exec" "helmfile" {
     command = "go"
     args = ["run", "main.go"]
-    version = "> 0.94.0"
+    version = "> 0.141.0"
   }
 
   directory "build" {
@@ -81,7 +81,7 @@ module "myapp" {
   dependency "exec" "helmfile" {
     command = "go"
     args = ["run", "main.go"]
-    version = "> 0.94.0"
+    version = "> 0.141.0"
   }
 
   directory "build" {
@@ -104,7 +104,7 @@ module "myapp" {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			files := map[string]interface{}{
 				"/path/to/myapp.variantmod": tc.in,
-				"/path/to/build/Dockerfile": `FROM helmfile:0.94.0
+				"/path/to/build/Dockerfile": `FROM helmfile:0.141.0
 
 RUN echo hello
 `,
@@ -115,7 +115,7 @@ RUN echo hello
 				"/path/to/myapp.variantmod.lock": `
 dependencies:
   helmfile:
-    version: "0.94.1"
+    version: "0.142.0"
 `,
 			}
 			fs, clean, err := vfst.NewTestFS(files)
@@ -128,8 +128,8 @@ dependencies:
 			klog.V(2).Info(fmt.Sprintf("temp dir: %v", fs.TempDir()))
 
 			expectedInput := cmdsite.NewInput("go", []string{"run", "main.go"}, map[string]string{})
-			expectedStdout := `0.94.1
-0.95.0
+			expectedStdout := `0.141.0
+0.142.0
 `
 			cmdr := cmdsite.NewTester(map[cmdsite.CommandInput]cmdsite.CommandOutput{
 				expectedInput: {Stdout: expectedStdout},
@@ -145,7 +145,7 @@ dependencies:
 				t.Fatal(err)
 			}
 
-			dockerfile1Expected := `FROM helmfile:0.94.1
+			dockerfile1Expected := `FROM helmfile:0.141.0
 
 RUN echo hello
 `
@@ -168,10 +168,10 @@ RUN echo hello
 			}
 			lockExpected := `dependencies:
   helmfile:
-    version: 0.95.0
-    previousVersion: 0.94.1
+    version: 0.142.0
+    previousVersion: 0.141.0
     versions:
-    - 0.95.0
+    - 0.142.0
 `
 			if string(lockActual) != lockExpected {
 				t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
@@ -207,7 +207,7 @@ module "myapp" {
   dependency "exec" "helmfile" {
     command = "go"
     args = ["run", "main.go"]
-    version = "> 0.94.0"
+    version = "> 0.141.0"
   }
 
   executable "helmfile" {
@@ -231,7 +231,7 @@ module "myapp" {
   dependency "exec" "helmfile" {
     command = "go"
     args = ["run", "main.go"]
-    version = "> 0.94.0"
+    version = "> 0.141.0"
   }
 
   executable "helmfile" {
@@ -241,7 +241,8 @@ module "myapp" {
         image = "quay.io/roboll/helmfile"
         tag = "v${dep.helmfile.version}"
         volumes = [
-          "$PWD:/work"
+          "$PWD:/work",
+		  "$PWD:$PWD",
         ]
         workdir = "/work"
       }
@@ -261,7 +262,7 @@ module "myapp" {
 				"/path/to/myapp.variantmod.lock": `
 dependencies:
   helmfile:
-    version: "0.94.1"
+    version: "0.141.0"
 `,
 			}
 			fs, clean, err := vfst.NewTestFS(files)
@@ -274,8 +275,8 @@ dependencies:
 			klog.V(2).Info(fmt.Sprintf("temp dir: %v", fs.TempDir()))
 
 			expectedInput := cmdsite.NewInput("go", []string{"run", "main.go"}, map[string]string{})
-			expectedStdout := `0.94.1
-0.95.0
+			expectedStdout := `0.141.0
+0.142.0
 `
 			cmdr := cmdsite.NewTester(map[cmdsite.CommandInput]cmdsite.CommandOutput{
 				expectedInput: {Stdout: expectedStdout},
@@ -303,7 +304,7 @@ dependencies:
 				}
 
 				actual := strings.TrimSpace(string(stdout))
-				expected := fmt.Sprintf("helmfile version v%s", "0.94.1")
+				expected := fmt.Sprintf("helmfile version v%s", "0.141.0")
 
 				if actual != expected {
 					t.Errorf("unexpected helmfile version output: expected=\"%s\", got=\"%s\"", expected, actual)
@@ -321,10 +322,10 @@ dependencies:
 			}
 			lockExpected := `dependencies:
   helmfile:
-    version: 0.95.0
-    previousVersion: 0.94.1
+    version: 0.142.0
+    previousVersion: 0.141.0
     versions:
-    - 0.95.0
+    - 0.142.0
 `
 			if string(lockActual) != lockExpected {
 				t.Errorf("assertion failed: expected=%s, got=%s", lockExpected, string(lockActual))
@@ -344,7 +345,7 @@ dependencies:
 				}
 
 				actual := strings.TrimSpace(string(stdout))
-				expected := fmt.Sprintf("helmfile version v%s", "0.95.0")
+				expected := fmt.Sprintf("helmfile version v%s", "0.142.0")
 
 				if actual != expected {
 					t.Errorf("unexpected helmfile version output: expected=\"%s\", got=\"%s\"", expected, actual)

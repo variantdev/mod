@@ -48,26 +48,12 @@ func New() Getter {
 	}
 }
 
-type TestGetInput struct {
-	URL  string
-	Opts Opts
-}
-
-func (i TestGetInput) Key() string {
-	return i.URL
-}
-
-type TestGetInputInterface interface {
-	Key() string
-}
-
-func NewTester(expectations map[TestGetInputInterface]string) Getter {
+func NewTester(expectations map[string]string) Getter {
 	return &getter{
 		responseBodyFor: func(url string, opts Opts) (io.ReadCloser, error) {
-			input := TestGetInput{URL: url, Opts: opts}
-			res, ok := expectations[input]
+			res, ok := expectations[url]
 			if !ok {
-				return nil, fmt.Errorf("unexpected input: %v", input)
+				return nil, fmt.Errorf("unexpected input: url=%v, opts=%v", url, opts)
 			}
 			r := ioutil.NopCloser(bytes.NewReader([]byte(res)))
 			return r, nil
