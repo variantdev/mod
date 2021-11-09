@@ -13,6 +13,11 @@ type Option interface {
 }
 
 type Opts struct {
+	Header map[string]string
+}
+
+func (o Opts) Set(another *Opts) {
+	*another = o
 }
 
 type Getter interface {
@@ -26,7 +31,18 @@ type getter struct {
 func New() Getter {
 	return &getter{
 		responseBodyFor: func(url string, opts Opts) (io.ReadCloser, error) {
-			res, err := http.Get(url)
+			req, err := http.NewRequest(http.MethodGet, url, &bytes.Buffer{})
+			if err != nil {
+				return nil, err
+			}
+
+			if header := opts.Header; header != nil {
+				for k, v := range header {
+					req.Header.Add(k, v)
+				}
+			}
+
+			res, err := http.DefaultClient.Do(req)
 			return res.Body, err
 		},
 	}
@@ -37,7 +53,15 @@ type TestGetInput struct {
 	Opts Opts
 }
 
-func NewTester(expectations map[TestGetInput]string) Getter {
+func (i TestGetInput) Key() string {
+	return i.URL
+}
+
+type TestGetInputInterface interface {
+	Key() string
+}
+
+func NewTester(expectations map[TestGetInputInterface]string) Getter {
 	return &getter{
 		responseBodyFor: func(url string, opts Opts) (io.ReadCloser, error) {
 			input := TestGetInput{URL: url, Opts: opts}

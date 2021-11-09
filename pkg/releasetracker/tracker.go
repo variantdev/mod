@@ -2,6 +2,14 @@ package releasetracker
 
 import (
 	"fmt"
+	"io/ioutil"
+	"log"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+
 	"github.com/Masterminds/semver"
 	"github.com/PaesslerAG/jsonpath"
 	"github.com/go-logr/logr"
@@ -12,14 +20,7 @@ import (
 	"github.com/variantdev/mod/pkg/maputil"
 	"github.com/variantdev/mod/pkg/vhttpget"
 	"gopkg.in/yaml.v3"
-	"io/ioutil"
 	"k8s.io/klog/klogr"
-	"log"
-	"os"
-	"path/filepath"
-	"regexp"
-	"sort"
-	"strings"
 )
 
 type Release struct {
@@ -235,13 +236,20 @@ func newGitHubReleasesProvider(spec GitHubReleases, r *Tracker) *httpJsonPathPro
 	}
 	url := fmt.Sprintf("https://%s/repos/%s/releases", host, spec.Source)
 
+	var auth string
+
+	if gt := os.Getenv("GITHUB_TOKEN"); gt != "" {
+		auth = "token " + gt
+	}
+
 	return &httpJsonPathProvider{
-		url:         url,
-		jsonpath:    "$[*].tag_name",
-		metaKey:     "githubRelease",
-		objectPath:  "$[*]",
-		versionPath: "tag_name",
-		runtime:     r,
+		url:           url,
+		authorization: auth,
+		jsonpath:      "$[*].tag_name",
+		metaKey:       "githubRelease",
+		objectPath:    "$[*]",
+		versionPath:   "tag_name",
+		runtime:       r,
 	}
 }
 
@@ -252,10 +260,17 @@ func newGitHubTagsProvider(spec GitHubTags, r *Tracker) *httpJsonPathProvider {
 	}
 	url := fmt.Sprintf("https://%s/repos/%s/tags", host, spec.Source)
 
+	var auth string
+
+	if gt := os.Getenv("GITHUB_TOKEN"); gt != "" {
+		auth = "token " + gt
+	}
+
 	return &httpJsonPathProvider{
-		url:      url,
-		jsonpath: "$[*].name",
-		runtime:  r,
+		url:           url,
+		authorization: auth,
+		jsonpath:      "$[*].name",
+		runtime:       r,
 	}
 }
 
@@ -334,6 +349,7 @@ func (p *dockerImageTagsProvider) All() ([]*Release, error) {
 
 type httpJsonPathProvider struct {
 	url, jsonpath string
+	authorization string
 	nextpagePath  string
 	params        map[string]string
 
@@ -417,6 +433,7 @@ func (p *Tracker) releasesFromHttpJsonPath(pp *httpJsonPathProvider) ([]*Release
 	url := pp.url
 	jpath := pp.jsonpath
 	nextpagePath := pp.nextpagePath
+	auth := pp.authorization
 	params := pp.params
 
 	query := ""
@@ -441,7 +458,12 @@ func (p *Tracker) releasesFromHttpJsonPath(pp *httpJsonPathProvider) ([]*Release
 		}
 		debug("http get: %s", u)
 
-		res, err := p.httpGetter.DoRequest(u)
+		header := map[string]string{}
+		if auth != "" {
+			header["authorization"] = auth
+		}
+
+		res, err := p.httpGetter.DoRequest(u, vhttpget.Opts{Header: header})
 		if err != nil {
 			return nil, err
 		}
@@ -492,7 +514,7 @@ func (p *Tracker) extractObjects(tmp interface{}, objPath, verPath, metaKey stri
 
 	got, err := jsonpath.Get(objPath, v)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to lookup %q in object %v: %v", objPath, v, err)
 	}
 
 	var rs []*Release
@@ -506,7 +528,7 @@ func (p *Tracker) extractObjects(tmp interface{}, objPath, verPath, metaKey stri
 		for _, obj := range typed {
 			raw, err := jsonpath.Get(verPath, obj)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("unable to get version at %s from %v: %v", verPath, obj, err)
 			}
 
 			s, ok := raw.(string)
@@ -548,7 +570,7 @@ func (p *Tracker) extractObjects(tmp interface{}, objPath, verPath, metaKey stri
 func (p *Tracker) extractVersions(tmp interface{}, jpath string) ([]*Release, error) {
 	vs, err := p.extractVersionStrings(tmp, jpath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unalble to extract versions at %s from %v: %v", jpath, tmp, err)
 	}
 
 	return p.versionsToReleases(vs)
