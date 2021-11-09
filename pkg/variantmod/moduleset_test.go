@@ -115,7 +115,7 @@ RUN echo hello
 				"/path/to/myapp.variantmod.lock": `
 dependencies:
   helmfile:
-    version: "0.142.0"
+    version: "0.141.0"
 `,
 			}
 			fs, clean, err := vfst.NewTestFS(files)
