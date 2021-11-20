@@ -4,14 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/go-logr/logr"
 	"github.com/hashicorp/go-getter"
 	"github.com/hashicorp/go-getter/helper/url"
 	"github.com/twpayne/go-vfs"
 	"gopkg.in/yaml.v3"
 	"k8s.io/klog/klogr"
-	"path/filepath"
-	"strings"
 )
 
 // Resolver is the caching dependency resolver for variantmod that
@@ -394,13 +396,58 @@ type GoGetter struct {
 func (g *GoGetter) Get(wd, src, dst string, fileMode bool) error {
 	ctx := context.Background()
 
+	getters := make(map[string]getter.Getter)
+	for k, v := range getter.Getters {
+		getters[k] = v
+	}
+
+	httpGetter := &getter.HttpGetter{
+		Netrc: true,
+	}
+
+	header := make(map[string][]string)
+
+	if strings.HasPrefix(src, "https://api.github.com/") {
+		var auth string
+		if gt := os.Getenv("GITHUB_TOKEN"); gt != "" {
+			auth = "token " + gt
+		}
+
+		if auth != "" {
+			header["authorization"] = []string{auth}
+		}
+	}
+
+	srcURL, err := url.Parse(src)
+	if err != nil {
+		if l := g.Logger; l != nil {
+			l.Info("Failed to parse src URL %q: %w", src, err)
+		}
+	} else {
+		contentType := srcURL.Query().Get("accept")
+		if contentType != "" {
+			header["accept"] = []string{contentType}
+		}
+	}
+
+	if len(header) > 0 {
+		httpGetter.Header = header
+	}
+
+	getters["https"] = httpGetter
+
 	get := &getter.Client{
-		Ctx:     ctx,
-		Src:     src,
-		Dst:     filepath.Join(wd, dst),
-		Pwd:     wd,
-		Mode:    getter.ClientModeDir,
-		Options: []getter.ClientOption{},
+		Ctx:  ctx,
+		Src:  src,
+		Dst:  filepath.Join(wd, dst),
+		Pwd:  wd,
+		Mode: getter.ClientModeDir,
+		Options: []getter.ClientOption{
+			func(c *getter.Client) error {
+				c.Getters = getters
+				return nil
+			},
+		},
 	}
 
 	if fileMode {
