@@ -396,6 +396,8 @@ type GoGetter struct {
 func (g *GoGetter) Get(wd, src, dst string, fileMode bool) error {
 	ctx := context.Background()
 
+	detectors := append([]getter.Detector{}, getter.Detectors...)
+
 	getters := make(map[string]getter.Getter)
 	for k, v := range getter.Getters {
 		getters[k] = v
@@ -436,6 +438,10 @@ func (g *GoGetter) Get(wd, src, dst string, fileMode bool) error {
 
 	getters["https"] = httpGetter
 
+	ghra := &githubReleaseAsset{}
+	getters["githubdownload"] = ghra
+	detectors = append([]getter.Detector{ghra}, detectors...)
+
 	get := &getter.Client{
 		Ctx:  ctx,
 		Src:  src,
@@ -444,6 +450,7 @@ func (g *GoGetter) Get(wd, src, dst string, fileMode bool) error {
 		Mode: getter.ClientModeDir,
 		Options: []getter.ClientOption{
 			func(c *getter.Client) error {
+				c.Detectors = detectors
 				c.Getters = getters
 				return nil
 			},

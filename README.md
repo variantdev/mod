@@ -8,6 +8,11 @@ It turns any set of files in Git/S3/GCS/HTTP as a reusable module with managed, 
 
 Think of it as a `vgo`, `npm`, `bundle` alternative, but for any project.
 
+- [Configuration](#configuration)
+  - [file provisioner](#file-provisioner)
+  - [regexpReplace provisioner](#regexpreplace-provisioner)
+  - [docker executable provisioner](#docker-executable-provisioner)
+
 ## Getting started
 
 Let's assume you have a `Dockerfile` to build a Docker image containing specific version of `helm`:
@@ -183,7 +188,56 @@ Navigate to the following examples to see practical usage of `mod`:
 - [examples/eks-k8s-vers](https://github.com/variantdev/mod/blob/master/examples/eks-k8s-vers) for updating your [eksctl] cluster on new K8s release
 - [examples/image-tag-in-dockerfile-and-config](https://github.com/variantdev/mod/tree/master/examples/image-tag-in-dockerfile-and-config) for updating your `Dockerfile` and `.circleci/config.yml` on new Golang release
 
-## API Reference
+## Configuration
+
+## `file` provisioner
+
+Under `provisioners[].files`, you can write a JSON object whose keys are destination file paths and values are URLs of remote source files.
+
+URLs are [go-getter](https://github.com/hashicorp/go-getter) URLs. We altered a custom logic for auto-detecting go-getter protocol from an URL so you usually have a better result by specifing the protocol explicitly.
+
+That said, when you'd like to let `mod` download `README.md` from a GitHub repository at `OWNER/REPO` from the latest tag
+that is greater than `0.1`, you compose your `variant.mod` configuration file like below.
+
+```yaml
+provisioners:
+  files:
+    testout/foo.md:
+      source: git::https://github.com/OWNER/REPO.git@README.md?ref=v{{.myservice.version}}
+
+dependencies:
+  myservice:
+    releasesFrom:
+      githubReleases:
+        source: OWNER/REPO
+    version: "> 0.1"
+```
+
+`go-getter`'s `git` protocol supports private repositories as it runs the real `git` command under the hood that uses your SSH private key for authentication. That means `mod` supports downloading files from private GitHub repositories, too!
+
+`mod` provides a custom `go-getter` protocol implementation named `githubdownload`. This implementation, as it's name states, allows you to easily download release assets from GitHub repositories.
+
+Let's say you want `mod` to download a asset named `some.txt` for the latest release that is greater than `0.1`, you write `variant.mod` configuration like:
+
+```yaml
+provisioners:
+  files:
+    testout/sha512sum.txt:
+      source: githubdownload::https://github.com/OWNER/REPO/releases/download/v${myservice.version}/some.txt
+
+dependencies:
+  myservice:
+    releasesFrom:
+      githubReleases:
+        source: OWNER/REPO
+    version: "> 0.1"
+```
+
+As similar as the `go-getter`'s standard `git` protocol, this supports downloading from private repositories, too, but with another authentication method. It automatically reads the `GITHUB_TOKEN` environment variable for a GitHub personal access token, and uses that for authentication.
+
+Under the hood, `mod` transform the remote source file URL to a series of GitHub API calls, to figure out the asset ID of the named asset, and finally download the asset as a binary file by sending GitHub a GET HTTP request for `https://api.github.com/repos/OWNER/REPO/releases/assets/ASSET_ID` with `Accept: application/octet-stream`.
+
+So, if you had questioned yourself why you can't just use `go-getter`'s `https` support for downloading release assets, the answer is- it isn't actually like literally HTTP-getting `https://github.com/OWNER/REPO/releases/download/v${myservice.version}/some.txt` :)
 
 ## `regexpReplace` provisioner
 
