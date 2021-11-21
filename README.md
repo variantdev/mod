@@ -10,6 +10,8 @@ Think of it as a `vgo`, `npm`, `bundle` alternative, but for any project.
 
 - [Configuration](#configuration)
   - [file provisioner](#file-provisioner)
+    - [Getting a file from Git repository](#getting-a-file-from-a-git-repository)
+    - [Downloading a release asset from GitHub](#downloading-a-release-asset-from-github)
   - [regexpReplace provisioner](#regexpreplace-provisioner)
   - [docker executable provisioner](#docker-executable-provisioner)
 
@@ -196,6 +198,8 @@ Under `provisioners[].files`, you can write a JSON object whose keys are destina
 
 URLs are [go-getter](https://github.com/hashicorp/go-getter) URLs. We altered a custom logic for auto-detecting go-getter protocol from an URL so you usually have a better result by specifing the protocol explicitly.
 
+### Getting a file from a Git repository
+
 That said, when you'd like to let `mod` download `README.md` from a GitHub repository at `OWNER/REPO` from the latest tag
 that is greater than `0.1`, you compose your `variant.mod` configuration file like below.
 
@@ -214,6 +218,8 @@ dependencies:
 ```
 
 `go-getter`'s `git` protocol supports private repositories as it runs the real `git` command under the hood that uses your SSH private key for authentication. That means `mod` supports downloading files from private GitHub repositories, too!
+
+### Downloading a release asset from GitHub
 
 `mod` provides a custom `go-getter` protocol implementation named `githubdownload`. This implementation, as it's name states, allows you to easily download release assets from GitHub repositories.
 
