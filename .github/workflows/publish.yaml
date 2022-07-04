@@ -1,33 +1,33 @@
-name: Publish Canary Image
+name: Publish Binaries and Images
 
 on:
   push:
-    branches:
-      - master
-    paths-ignore:
-      - '**.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/workflows/ci.yaml'
-      - '.github/renovate.*'
-      - '.gitignore'
-      - 'PROJECT'
-      - 'LICENSE'
-      - 'Makefile'
+    branches-ignore:
+      - '**'
+    tags:
+      - 'v*'
 
 # https://docs.github.com/en/rest/overview/permissions-required-for-github-apps
 permissions:
-  contents: read
-  packages: write  
+ contents: write 
+ packages: write
 
 jobs:
-  canary-build:
-    name: Build and Publish Canary Image  
+  images:
+    name: Release
     runs-on: ubuntu-latest
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKER_USER }}
     steps:
       - name: Checkout
         uses: actions/checkout@v3
+
+      - uses: actions/setup-go@v3
+        with:
+          go-version: '1.18.3'
+
+      - name: Set version
+        run: echo "VERSION=$(cat ${GITHUB_EVENT_PATH} | jq -r '.release.tag_name')" >> $GITHUB_ENV
 
       - name: Setup Docker Environment
         id: vars
@@ -38,8 +38,6 @@ jobs:
           ghcr_username: ${{ github.actor }}
           ghcr_password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Considered unstable builds
-      # See Issue #285, PR #286, and PR #323 for more information
       - name: Build and Push
         uses: docker/build-push-action@v3
         with:
@@ -47,7 +45,30 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            variantdev/mod:canary
-            ghcr.io/variantdev/mod:canary
-          cache-from: type=gha,scope=mod-canary
-          cache-to: type=gha,mode=max,scope=mod-canary
+            variantdev/mod:latest
+            variantdev/mod:${{ env.VERSION }}
+            variantdev/mod:${{ env.VERSION }}-${{ steps.vars.outputs.sha_short }}
+            ghcr.io/variantdev/mod:latest
+            ghcr.io/variantdev/mod:${{ env.VERSION }}
+            ghcr.io/variantdev/mod:${{ env.VERSION }}-${{ steps.vars.outputs.sha_short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+  binaries:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v3
+      -
+        name: Set up Go
+        uses: actions/setup-go@v3
+        with:
+          go-version: '1.18.3'
+      -
+        name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v1
+        with:
+          version: latest
+          args: release --rm-dist
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

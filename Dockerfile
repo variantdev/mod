@@ -4,6 +4,7 @@ ARG MOD_VERSION
 
 ENV GOOS=linux
 ENV GOARCH=amd64
+ENV CGO_ENABLED=0
 
 WORKDIR /go/src/github.com/variantdev/mod
 COPY . /go/src/github.com/variantdev/mod
