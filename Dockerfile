@@ -1,4 +1,4 @@
-FROM golang:1.13 as builder
+FROM golang:1.18 as builder
 
 ARG MOD_VERSION
 
@@ -9,7 +9,7 @@ WORKDIR /go/src/github.com/variantdev/mod
 COPY . /go/src/github.com/variantdev/mod
 
 RUN if [ -n "${MOD_VERSION}" ]; then git checkout -b tag refs/tags/v${MOD_VERSION}; fi \
-    && make build -e GO111MODULE=on
+    && make build
 
 
 FROM buildpack-deps:scm
