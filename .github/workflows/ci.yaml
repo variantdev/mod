@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  test-controller:
+  test:
     name: Test
     runs-on: ubuntu-latest
     steps:
@@ -36,6 +36,7 @@ jobs:
       run: |
         make test
   binaries:
+    name: Build Binaries
     runs-on: ubuntu-latest
     steps:
       -
