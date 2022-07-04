@@ -1,6 +1,6 @@
 # mod
 
-[![CircleCI](https://circleci.com/gh/variantdev/mod.svg?style=svg)](https://circleci.com/gh/variantdev/mod)
+![CI status](https://github.com/variantdev/mod/actions/workflows/ci.yaml/badge.svg?branch=master)
 
 `mod` is a universal package manager complements task runners and build tools like `make` and [variant](https://github.com/mumoshu/variant).
 
