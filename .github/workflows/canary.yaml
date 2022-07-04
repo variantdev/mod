@@ -39,7 +39,6 @@ jobs:
           ghcr_password: ${{ secrets.GITHUB_TOKEN }}
 
       # Considered unstable builds
-      # See Issue #285, PR #286, and PR #323 for more information
       - name: Build and Push
         uses: docker/build-push-action@v3
         with:
