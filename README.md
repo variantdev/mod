@@ -330,7 +330,7 @@ For example, AWS ECR uses `<MY_AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.co
 provisioners:
   regexpReplace:
     Dockerfile:
-      from: "(FROM <MY_AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com:)(\\S+)(\\s+)"
+      from: "(FROM <MY_AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/actions-runner-controller:)(\\S+)(\\s+)"
       to: "${1}{{.Dependencies.arc.version}}${3}"
 
 dependencies:
