@@ -329,7 +329,7 @@ For example, AWS ECR uses `<MY_AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.co
 ```yaml
 provisioners:
   regexpReplace:
-    Dockerfile.test:
+    Dockerfile:
       from: "(FROM <MY_AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com:)(\\S+)(\\s+)"
       to: "${1}{{.Dependencies.arc.version}}${3}"
 
@@ -340,6 +340,15 @@ dependencies:
         source: actions-runner-controller
         host: <MY_AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com
     version: "> 0.24.0"
+```
+
+Beware that you must set `DOCKER_USERNAME` and `DOCKER_PASSWORD` when running the `mod build` command. The username is `AWS` and the password can be obtained via `aws ecr get-login-password` as of July 2022.
+
+```console
+$ export DOCKER_USERNAME=AWS
+$ export DOCKER_PASSWORD=$(docker run -e AWS_DEFAULT_REGION -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY --rm -it amazon/aws-cli ecr get-login-password)
+$ mod build
+#=> This will read the `./variant.mod` file shown above and updates the `./Dockerfile`.
 ```
 
 # Similar Projects
