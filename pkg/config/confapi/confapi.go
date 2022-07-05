@@ -175,6 +175,7 @@ type GitHubReleases struct {
 
 type DockerImageTags struct {
 	Source func(map[string]interface{}) (string, error)
+	Host   string
 }
 
 type Stage struct {

@@ -47,6 +47,7 @@ func ToVersionsFrom(v VersionsFrom) confapi.VersionsFrom {
 	r.Exec.Args = v.Exec.Args
 	r.Exec.Command = v.Exec.Command
 	r.DockerImageTags.Source = NewRender("dockerimageTags.source", v.DockerImageTags.Source)
+	r.DockerImageTags.Host = v.DockerImageTags.Host
 	r.GitHubReleases.Source = NewRender("githubReleases.source", v.GitHubReleases.Source)
 	r.GitHubReleases.Host = v.GitHubReleases.Host
 	r.GitHubTags.Source = NewRender("githubTags.source", v.GitHubTags.Source)
@@ -86,6 +87,7 @@ type GitHubReleases struct {
 
 type DockerImageTags struct {
 	Source string `yaml:"source"`
+	Host   string `yaml:"host"`
 }
 
 type ParametersSpec struct {

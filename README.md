@@ -14,7 +14,8 @@ Think of it as a `vgo`, `npm`, `bundle` alternative, but for any project.
     - [Downloading a release asset from GitHub](#downloading-a-release-asset-from-github)
   - [regexpReplace provisioner](#regexpreplace-provisioner)
   - [docker executable provisioner](#docker-executable-provisioner)
-
+  - [Examples](#examples)
+    - [Update the tag of a container image hosted on AWS ECR](#update-the-tag-of-a-container-image-hosted-on-aws-ecr)
 ## Getting started
 
 Let's assume you have a `Dockerfile` to build a Docker image containing specific version of `helm`:
@@ -315,6 +316,31 @@ The following template functions are available for use within template provision
 - `{{ hasKey .Foo.Bar "mykey" }}` returns `true` if `.Foo.Bar` is a `map[string]interface{}` and the value for the key `mykey` is set.
 - `{{ trimSpace .Str }}` removes spaces, tabs, and new-lines from `.Str`
 ``
+
+## Examples
+
+### Update the tag of a container image hosted on AWS ECR
+
+The `dockerImageTags` dependency provider accepts the `host` field to customize the
+host that serves the Registry v2 API.
+
+For example, AWS ECR uses `<MY_AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com` as the host. With that in mind, you might be able to update the tag of the base image hosted on ECR within your Dockerfile by something like the below:
+
+```yaml
+provisioners:
+  regexpReplace:
+    Dockerfile.test:
+      from: "(FROM <MY_AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com:)(\\S+)(\\s+)"
+      to: "${1}{{.Dependencies.arc.version}}${3}"
+
+dependencies:
+  arc:
+    releasesFrom:
+      dockerImageTags:
+        source: actions-runner-controller
+        host: <MY_AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com
+    version: "> 0.24.0"
+```
 
 # Similar Projects
 

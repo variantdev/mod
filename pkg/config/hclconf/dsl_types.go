@@ -62,7 +62,8 @@ type GitHubReleases struct {
 }
 
 type DockerImageTags struct {
-	Source string `hcl:"source,attr"`
+	Host   *string `hcl:"host,attr"`
+	Source string  `hcl:"source,attr"`
 }
 
 type File struct {

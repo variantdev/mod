@@ -47,5 +47,6 @@ type GitHubReleases struct {
 }
 
 type DockerImageTags struct {
+	Host   string `yaml:"host"`
 	Source string `yaml:"source"`
 }

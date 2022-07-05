@@ -225,6 +225,7 @@ func newGetterProvider(spec GetterJSONPath, r *Tracker) *getterJsonPathProvider 
 func newDockerHubImageTagsProvider(spec DockerImageTags, r *Tracker) *dockerImageTagsProvider {
 	return &dockerImageTagsProvider{
 		source:  spec.Source,
+		host:    spec.Host,
 		runtime: r,
 	}
 }
@@ -313,6 +314,7 @@ func (p *getterJsonPathProvider) All() ([]*Release, error) {
 
 type dockerImageTagsProvider struct {
 	source   string
+	host     string
 	username string
 	password string
 
@@ -329,7 +331,11 @@ func (p *dockerImageTagsProvider) All() ([]*Release, error) {
 	w := log.Writer()
 	log.SetOutput(ioutil.Discard)
 	defer log.SetOutput(w)
-	hub, err := registry.New("https://registry.hub.docker.com/", p.username, p.password)
+	host := p.host
+	if host == "" {
+		host = "registry.hub.docker.com"
+	}
+	hub, err := registry.New(fmt.Sprintf("https://%s/", host), p.username, p.password)
 	if err != nil {
 		return nil, err
 	}

@@ -2,6 +2,9 @@ package variantmod
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
+
 	"github.com/go-logr/logr"
 	"github.com/k-kinzal/aliases/pkg/aliases/yaml"
 	"github.com/twpayne/go-vfs"
@@ -11,8 +14,6 @@ import (
 	"github.com/variantdev/mod/pkg/depresolver"
 	"github.com/variantdev/mod/pkg/execversionmanager"
 	"github.com/variantdev/mod/pkg/releasetracker"
-	"regexp"
-	"strings"
 )
 
 func NewLoaderFromManager(man *ModuleManager) *ModuleLoader {
@@ -83,6 +84,7 @@ func (m *ModuleLoader) InitModule(params confapi.ModuleParams, mod confapi.Modul
 			if err != nil {
 				return nil, err
 			}
+			r.VersionsFrom.DockerImageTags.Host = dep.VersionsFrom.DockerImageTags.Host
 		}
 		if dep.VersionsFrom.GitHubReleases.Source != nil {
 			r.VersionsFrom.GitHubReleases.Source, err = dep.VersionsFrom.GitHubReleases.Source(initialValues)

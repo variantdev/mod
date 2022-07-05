@@ -95,10 +95,15 @@ func HCLModuleAsConfModule(mod hclconf.Module) (*confapi.Module, error) {
 			}
 		case "docker_tag":
 			var e hclconf.DockerImageTags
+			var host string
+			if e.Host != nil {
+				host = *e.Host
+			}
 			if err := gohcl.DecodeBody(d.BodyForType, &hcl.EvalContext{}, &e); err != nil {
 				return nil, err
 			}
 			provider.DockerImageTags = confapi.DockerImageTags{
+				Host: host,
 				Source: func(_ map[string]interface{}) (string, error) {
 					return e.Source, nil
 				},
