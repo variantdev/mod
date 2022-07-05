@@ -326,6 +326,14 @@ host that serves the Registry v2 API.
 
 For example, AWS ECR uses `<MY_AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com` as the host. With that in mind, you might be able to update the tag of the base image hosted on ECR within your Dockerfile by something like the below:
 
+`Dockerfile`:
+
+```
+FROM <MY_AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/actions-runner-controller:0.24.0
+```
+
+`variant.mod`:
+
 ```yaml
 provisioners:
   regexpReplace:
@@ -349,6 +357,12 @@ $ export DOCKER_USERNAME=AWS
 $ export DOCKER_PASSWORD=$(docker run -e AWS_DEFAULT_REGION -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY --rm -it amazon/aws-cli ecr get-login-password)
 $ mod build
 #=> This will read the `./variant.mod` file shown above and updates the `./Dockerfile`.
+```
+
+Assuming there's a image tag `0.25.0` that is newer than `0.24.0` on ECR(as you specified so in variant.mod with `"> 0.24.0"`), the Dockerfile would get updated with:
+
+```
+FROM <MY_AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/actions-runner-controller:0.25.0
 ```
 
 # Similar Projects
