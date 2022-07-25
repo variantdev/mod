@@ -6,11 +6,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
-	"github.com/Masterminds/semver"
 	"github.com/PaesslerAG/jsonpath"
 	"github.com/go-logr/logr"
 	"github.com/heroku/docker-registry-client/registry"
@@ -18,6 +16,7 @@ import (
 	"github.com/variantdev/mod/pkg/cmdsite"
 	"github.com/variantdev/mod/pkg/depresolver"
 	"github.com/variantdev/mod/pkg/maputil"
+	"github.com/variantdev/mod/pkg/semver"
 	"github.com/variantdev/mod/pkg/vhttpget"
 	"gopkg.in/yaml.v3"
 	"k8s.io/klog/klogr"
@@ -542,7 +541,7 @@ func (p *Tracker) extractObjects(tmp interface{}, objPath, verPath, metaKey stri
 				return nil, fmt.Errorf("unexpected type of value: want string, got %T, value is %v", raw, raw)
 			}
 
-			v, err := p.parseVersion(s)
+			v, err := semver.Parse(s)
 			if err != nil {
 				p.Logger.Info("Ignoring error: parsing semver", "error", err.Error(), "value", s, "jsonPath", verPath)
 				continue
@@ -655,46 +654,10 @@ func (p *Tracker) extractVersionStrings(tmp interface{}, jpath string) ([]string
 	return vs, nil
 }
 
-var versionRegex *regexp.Regexp
-
-func init() {
-	versionRegex = regexp.MustCompile(`v?([0-9]+)(\.[0-9]+)?(\.[0-9]+)?` + `(.*)`)
-}
-
-func nonSemverWorkaround(s string) string {
-	matches := versionRegex.FindStringSubmatch(s)
-
-	var preLike string
-
-	if len(matches) > 3 {
-		preLike = matches[4]
-	}
-
-	if preLike != "" && preLike[0] == '.' {
-		s = ""
-		ss := matches[1:4]
-		for i := range ss {
-			if ss[i] != "" {
-				s += ss[i]
-			}
-		}
-
-		s += "-" + preLike[1:]
-	}
-
-	return s
-}
-
-func (p *Tracker) parseVersion(s string) (*semver.Version, error) {
-	fixedS := nonSemverWorkaround(strings.TrimSpace(s))
-
-	return semver.NewVersion(fixedS)
-}
-
 func (p *Tracker) versionStringsToReleases(vs []string) ([]*Release, error) {
 	rs := []*Release{}
 	for i, s := range vs {
-		v, err := p.parseVersion(s)
+		v, err := semver.Parse(s)
 		if err != nil {
 			e := fmt.Errorf("parsing version: index %d: %q: %v", i, s, err)
 			p.Logger.V(1).Info("ignoring error", "err", e)

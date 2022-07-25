@@ -2,8 +2,9 @@ package deploycoordinator
 
 import (
 	"fmt"
-	"github.com/Masterminds/semver"
+
 	"github.com/variantdev/mod/pkg/config/confapi"
+	"github.com/variantdev/mod/pkg/semver"
 )
 
 type DependencyManager struct {
@@ -28,12 +29,12 @@ func addDependencyUpdate(existingDeps map[string]confapi.DependencyState, name, 
 
 	latest := dep.Versions[len(dep.Versions)-1]
 
-	latestV, err := semver.NewVersion(latest)
+	latestV, err := semver.Parse(latest)
 	if err != nil {
 		return fmt.Errorf("parsing %q as semver: %w", latest, err)
 	}
 
-	newV, err := semver.NewVersion(version)
+	newV, err := semver.Parse(version)
 	if err != nil {
 		return fmt.Errorf("parsing %q as semver: %w", version, err)
 	}
@@ -59,7 +60,7 @@ func updateDependencies(deps []string, existingDeps map[string]confapi.Dependenc
 		if len(dep.Versions) > 0 {
 			latest := dep.Versions[len(dep.Versions)-1]
 
-			latestV, err = semver.NewVersion(latest)
+			latestV, err = semver.Parse(latest)
 			if err != nil {
 				return fmt.Errorf("parsing %q as semver: %w", latest, err)
 			}
@@ -69,7 +70,7 @@ func updateDependencies(deps []string, existingDeps map[string]confapi.Dependenc
 
 		for _, d := range fetchedDeps {
 			if version := d.Version; version != "" {
-				newV, err := semver.NewVersion(version)
+				newV, err := semver.Parse(version)
 				if err != nil {
 					return fmt.Errorf("parsing %q as semver: %w", version, err)
 				}
