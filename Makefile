@@ -10,6 +10,10 @@ test:
 fmt:
 	go fmt $(go list ./... | grep -v /vendor/)
 
+.PHONY: goreleaser
+goreleaser:
+	docker run --rm -v "$(PWD)":/go/src/github.com/variantdev/mod -w /go/src/github.com/variantdev/mod goreleaser/goreleaser:latest release --snapshot --clean
+
 release/minor:
 	git checkout master
 	git pull --rebase origin master

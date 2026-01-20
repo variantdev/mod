@@ -1,0 +1,16 @@
+project_name: mod
+builds:
+  - id: mod
+    main: .
+    env:
+      - CGO_ENABLED=0
+    ldflags:
+      - -s -w -X github.com/variantdev/mod/pkg/version.Version={{.Version}}
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+changelog:
+  use: github-native
