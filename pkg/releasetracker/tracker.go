@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -11,8 +12,8 @@ import (
 
 	"github.com/PaesslerAG/jsonpath"
 	"github.com/go-logr/logr"
-	"github.com/heroku/docker-registry-client/registry"
 	"github.com/twpayne/go-vfs"
+	"github.com/variantdev/mod/pkg/dockerregistry"
 	"github.com/variantdev/mod/pkg/cmdsite"
 	"github.com/variantdev/mod/pkg/depresolver"
 	"github.com/variantdev/mod/pkg/maputil"
@@ -54,6 +55,10 @@ type Tracker struct {
 	goGetterCacheDir   string
 
 	httpGetter vhttpget.Getter
+
+	// dockerRegistryHTTPClient is an optional custom HTTP client for Docker registry requests.
+	// If nil, http.DefaultClient is used.
+	dockerRegistryHTTPClient *http.Client
 
 	dep *depresolver.Resolver
 }
@@ -334,12 +339,16 @@ func (p *dockerImageTagsProvider) All() ([]*Release, error) {
 	if host == "" {
 		host = "registry.hub.docker.com"
 	}
-	hub, err := registry.New(fmt.Sprintf("https://%s/", host), p.username, p.password)
+	var opts []dockerregistry.Option
+	if p.runtime.dockerRegistryHTTPClient != nil {
+		opts = append(opts, dockerregistry.WithHTTPClient(p.runtime.dockerRegistryHTTPClient))
+	}
+	client, err := dockerregistry.New(fmt.Sprintf("https://%s/", host), p.username, p.password, opts...)
 	if err != nil {
 		return nil, err
 	}
 
-	tags, err := hub.Tags(p.source)
+	tags, err := client.Tags(p.source)
 	if err != nil {
 		return nil, err
 	}
