@@ -1,6 +1,8 @@
 package releasetracker
 
 import (
+	"net/http"
+
 	"github.com/go-logr/logr"
 	"github.com/twpayne/go-vfs"
 	"github.com/variantdev/mod/pkg/cmdsite"
@@ -82,5 +84,20 @@ type commanderOption struct {
 
 func (o *commanderOption) SetOption(r *Tracker) error {
 	r.cmdSite.RunCmd = o.rc
+	return nil
+}
+
+// DockerRegistryHTTPClient sets a custom HTTP client for Docker registry requests.
+// This is useful for testing with self-signed certificates.
+func DockerRegistryHTTPClient(c *http.Client) Option {
+	return &dockerRegistryHTTPClientOption{c: c}
+}
+
+type dockerRegistryHTTPClientOption struct {
+	c *http.Client
+}
+
+func (o *dockerRegistryHTTPClientOption) SetOption(r *Tracker) error {
+	r.dockerRegistryHTTPClient = o.c
 	return nil
 }

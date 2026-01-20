@@ -1,6 +1,9 @@
 package releasetracker
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/Masterminds/semver"
@@ -417,11 +420,28 @@ func TestProvider_GitHubReleases(t *testing.T) {
 }
 
 func TestProvider_DockerRegistryImageTags(t *testing.T) {
+	// Create a TLS test server that mocks the Docker Registry API v2
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/mumoshu/helmfile-chatops/tags/list" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"tags": []string{"0.2.0", "0.1.0"},
+		})
+	}))
+	defer server.Close()
+
+	// Extract just the host:port from the test server URL (without scheme)
+	serverHost := server.URL[len("https://"):]
+
 	input := `releaseChannel:
   versionsFrom:
-    # This basically fetch "curl https://registry.hub.docker.com/v2/repositories/mumoshu/helmfile-chatops/tags/ | jq -r .results[].name"
     dockerImageTags:
       source: mumoshu/helmfile-chatops
+      host: ` + serverHost + `
 `
 
 	conf := &Config{}
@@ -429,11 +449,8 @@ func TestProvider_DockerRegistryImageTags(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	gets := map[string]string{
-		"https://registry.hub.docker.com/v2/repositories/mumoshu/helmfile-chatops/tags/?page_size=1000": `{"count": 2, "next": null, "previous": null, "results": [{"name": "0.2.0", "full_size": 89867735, "images": [{"size": 89867735, "architecture": "amd64", "variant": null, "features": null, "os": "linux", "os_version": null, "os_features": null}], "id": 60688451, "repository": 7345782, "creator": 17205, "last_updater": 17205, "last_updated": "2019-07-02T07:02:05.424914Z", "image_id": null, "v2": true}, {"name": "0.1.0", "full_size": 89738457, "images": [{"size": 89738457, "architecture": "amd64", "variant": null, "features": null, "os": "linux", "os_version": null, "os_features": null}], "id": 60687743, "repository": 7345782, "creator": 17205, "last_updater": 17205, "last_updated": "2019-07-02T06:51:44.860914Z", "image_id": null, "v2": true}]}`,
-	}
-	httpGetter := vhttpget.NewTester(gets)
-	stable, err := New(conf.ReleaseChannel, HttpGetter(httpGetter))
+	// Use the test server's client which is pre-configured with the correct TLS settings
+	stable, err := New(conf.ReleaseChannel, DockerRegistryHTTPClient(server.Client()))
 	if err != nil {
 		t.Fatal(err)
 	}
