@@ -29,23 +29,23 @@ runs:
       shell: bash
 
     - name: Set up QEMU
-      uses: docker/setup-qemu-action@v2
+      uses: docker/setup-qemu-action@v3.7.0
 
     - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
+      uses: docker/setup-buildx-action@v3.12.0
       with:
         version: latest
 
     - name: Login to DockerHub
       if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')) }}
-      uses: docker/login-action@v2
+      uses: docker/login-action@v3.6.0
       with:
         username: ${{ inputs.username }}
         password: ${{ inputs.password }}
 
     - name: Login to GitHub Container Registry
       if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')) }}
-      uses: docker/login-action@v2
+      uses: docker/login-action@v3.6.0
       with:
         registry: ghcr.io
         username: ${{ inputs.ghcr_username }}

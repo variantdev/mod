@@ -1,4 +1,4 @@
-FROM golang:1.18 as builder
+FROM golang:1.25.3 AS builder
 
 ARG MOD_VERSION
 
