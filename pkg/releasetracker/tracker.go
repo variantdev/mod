@@ -154,6 +154,34 @@ func debug(msg string, v ...interface{}) {
 	}
 }
 
+// summarizeValue returns a short description of a value suitable for error messages,
+// avoiding dumping entire API response objects.
+func summarizeValue(v interface{}) string {
+	switch typed := v.(type) {
+	case []interface{}:
+		return fmt.Sprintf("[]interface{} (%d items)", len(typed))
+	case map[string]interface{}:
+		keys := make([]string, 0, len(typed))
+		for k := range typed {
+			keys = append(keys, k)
+		}
+		if len(keys) > 5 {
+			return fmt.Sprintf("map[string]interface{} (%d keys, including %v, ...)", len(keys), keys[:5])
+		}
+		return fmt.Sprintf("map[string]interface{} (keys: %v)", keys)
+	case map[interface{}]interface{}:
+		return fmt.Sprintf("map[interface{}]interface{} (%d keys)", len(typed))
+	case nil:
+		return "<nil>"
+	default:
+		s := fmt.Sprintf("%v", v)
+		if len(s) > 200 {
+			return s[:200] + "..."
+		}
+		return s
+	}
+}
+
 func (p *Tracker) Latest(constraint string) (*Release, error) {
 	all, err := p.GetReleases()
 	if err != nil {
@@ -528,7 +556,7 @@ func (p *Tracker) extractObjects(tmp interface{}, objPath, verPath, metaKey stri
 
 	got, err := jsonpath.Get(objPath, v)
 	if err != nil {
-		return nil, fmt.Errorf("unable to lookup %q in object %v: %v", objPath, v, err)
+		return nil, fmt.Errorf("unable to lookup %q in object (%s): %v", objPath, summarizeValue(v), err)
 	}
 
 	var rs []*Release
@@ -542,7 +570,7 @@ func (p *Tracker) extractObjects(tmp interface{}, objPath, verPath, metaKey stri
 		for _, obj := range typed {
 			raw, err := jsonpath.Get(verPath, obj)
 			if err != nil {
-				return nil, fmt.Errorf("unable to get version at %s from %v: %v", verPath, obj, err)
+				return nil, fmt.Errorf("unable to get version at %s from %s: %v", verPath, summarizeValue(obj), err)
 			}
 
 			s, ok := raw.(string)
@@ -584,7 +612,7 @@ func (p *Tracker) extractObjects(tmp interface{}, objPath, verPath, metaKey stri
 func (p *Tracker) extractVersions(tmp interface{}, jpath string) ([]*Release, error) {
 	vs, err := p.extractVersionStrings(tmp, jpath)
 	if err != nil {
-		return nil, fmt.Errorf("unalble to extract versions at %s from %v: %v", jpath, tmp, err)
+		return nil, fmt.Errorf("unable to extract versions at %s from %s: %v", jpath, summarizeValue(tmp), err)
 	}
 
 	return p.versionsToReleases(vs)
@@ -635,11 +663,11 @@ func (p *Tracker) extractVersionStrings(tmp interface{}, jpath string) ([]string
 	case map[string]interface{}:
 		raw = append(raw, typed)
 	default:
-		return nil, fmt.Errorf("unexpected type of result from jsonpath: \"%s\": %v", jpath, typed)
+		return nil, fmt.Errorf("unexpected type of result from jsonpath %q: got %T", jpath, typed)
 	}
 
 	if len(raw) == 0 {
-		return nil, fmt.Errorf("jsonpath: \"%s\": returned nothing: %v", jpath, v)
+		return nil, fmt.Errorf("jsonpath %q: returned nothing from %s", jpath, summarizeValue(v))
 	}
 
 	vs := []string{}
@@ -656,7 +684,7 @@ func (p *Tracker) extractVersionStrings(tmp interface{}, jpath string) ([]string
 		case string:
 			vs = append(vs, typed)
 		default:
-			return nil, fmt.Errorf("jsonpath: unexpected type of result: %T=%v", typed, typed)
+			return nil, fmt.Errorf("jsonpath: unexpected type of result: %T (%s)", typed, summarizeValue(typed))
 		}
 	}
 

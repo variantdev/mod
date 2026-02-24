@@ -12,7 +12,7 @@ func CastKeysToStrings(s interface{}) (map[string]interface{}, error) {
 			case string:
 				str_k = typed_k
 			default:
-				return nil, fmt.Errorf("unexpected type of key in map: expected string, got %T: value=%v, map=%v", typed_k, typed_k, src)
+				return nil, fmt.Errorf("unexpected type of key in map: expected string, got %T: value=%v", typed_k, typed_k)
 			}
 
 			casted_v, err := recursivelyStringifyMapKey(v)
@@ -32,7 +32,7 @@ func CastKeysToStrings(s interface{}) (map[string]interface{}, error) {
 			new[k] = casted_v
 		}
 	default:
-		return nil, fmt.Errorf("unexpected type: value=%v, type=%T", src, src)
+		return nil, fmt.Errorf("unexpected type: type=%T", src)
 	}
 	return new, nil
 }
