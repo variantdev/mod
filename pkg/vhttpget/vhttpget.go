@@ -43,7 +43,21 @@ func New() Getter {
 			}
 
 			res, err := http.DefaultClient.Do(req)
-			return res.Body, err
+			if err != nil {
+				return nil, err
+			}
+
+			if res.StatusCode < 200 || res.StatusCode >= 300 {
+				defer res.Body.Close()
+				body, _ := ioutil.ReadAll(io.LimitReader(res.Body, 512))
+				snippet := string(body)
+				if len(snippet) > 0 {
+					return nil, fmt.Errorf("GET %s: %s: %s", url, res.Status, snippet)
+				}
+				return nil, fmt.Errorf("GET %s: %s", url, res.Status)
+			}
+
+			return res.Body, nil
 		},
 	}
 }
