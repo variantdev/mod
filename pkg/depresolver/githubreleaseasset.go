@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -211,9 +210,10 @@ func (a *githubReleaseAsset) getFile(dst string, owner, repo string, assetID int
 		return fmt.Errorf("mkdir %s: %w", dir, err)
 	}
 
-	req, err := http.NewRequest("GET", fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/assets/%d", owner, repo, assetID), nil)
+	reqURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/assets/%d", owner, repo, assetID)
+	req, err := http.NewRequest("GET", reqURL, nil)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	req.Header = make(http.Header)
 	if gt := os.Getenv("GITHUB_TOKEN"); gt != "" {
@@ -226,6 +226,10 @@ func (a *githubReleaseAsset) getFile(dst string, owner, repo string, assetID int
 		return err
 	}
 	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("GET %s: %s", reqURL, res.Status)
+	}
 
 	f, err := os.OpenFile(dst, os.O_RDWR|os.O_CREATE, os.FileMode(0666))
 	if err != nil {
